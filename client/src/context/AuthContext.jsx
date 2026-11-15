@@ -11,21 +11,29 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const verifyAuth = async () => {
       const storedToken = authService.getStoredToken();
-      if (storedToken) {
-        try {
-          const res = await authService.getMe();
-          if (res.user) {
-            setUser(res.user);
-            localStorage.setItem('campustest_user', JSON.stringify(res.user));
-          }
-        } catch (err) {
-          console.warn('[AuthContext] Session expired or invalid:', err.message);
-          authService.logout();
-          setUser(null);
-          setToken(null);
-        }
+
+      // No token stored → show login page immediately (no network call)
+      if (!storedToken) {
+        setLoading(false);
+        return;
       }
-      setLoading(false);
+
+      // Token exists → verify it with the backend
+      try {
+        const res = await authService.getMe();
+        if (res.user) {
+          setUser(res.user);
+          localStorage.setItem('campustest_user', JSON.stringify(res.user));
+        }
+      } catch (err) {
+        // Token invalid / backend down → clear and show login
+        console.warn('[AuthContext] Session invalid or backend unreachable:', err.message);
+        authService.logout();
+        setUser(null);
+        setToken(null);
+      } finally {
+        setLoading(false);
+      }
     };
 
     verifyAuth();
@@ -38,17 +46,21 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
-  const register = async (userData) => {
-    const data = await authService.register(userData);
+  const registerAdmin = async (adminData) => {
+    const data = await authService.initAdmin(adminData);
     setUser(data.user);
     setToken(data.token);
     return data;
   };
 
-  const logout = () => {
-    authService.logout();
+  const logout = async () => {
+    await authService.logout();
     setUser(null);
     setToken(null);
+  };
+
+  const changePassword = async (passwords) => {
+    return await authService.changePassword(passwords);
   };
 
   const value = {
@@ -56,8 +68,9 @@ export const AuthProvider = ({ children }) => {
     token,
     loading,
     login,
-    register,
     logout,
+    registerAdmin,
+    changePassword,
     isAuthenticated: !!token && !!user,
     isAdmin: user?.role === 'admin',
     isStudent: user?.role === 'student'
