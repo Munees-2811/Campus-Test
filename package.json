@@ -1,0 +1,23 @@
+{
+  "name": "campustest-monorepo",
+  "version": "1.0.0",
+  "description": "CampusTest - Full Stack Application (React + Vite + Express + Supabase PostgreSQL)",
+  "scripts": {
+    "server": "npm --prefix server run dev",
+    "client": "npm --prefix client run dev",
+    "start": "node server/server.js",
+    "build": "npm --prefix client run build"
+  },
+  "keywords": [
+    "campustest",
+    "react",
+    "vite",
+    "express",
+    "supabase",
+    "postgresql",
+    "jwt",
+    "tailwind"
+  ],
+  "author": "",
+  "license": "ISC"
+}
