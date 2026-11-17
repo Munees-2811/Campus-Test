@@ -14,6 +14,7 @@ import testService from '../services/testService';
 import adminService from '../services/adminService';
 
 // Sub-views for the 13 Admin Portal Pages
+import AssessmentManagementView from '../components/admin/AssessmentManagementView';
 import StudentManagementView from '../components/admin/StudentManagementView';
 import BulkStudentImportView from '../components/admin/BulkStudentImportView';
 import QuestionBankView from '../components/admin/QuestionBankView';
@@ -577,113 +578,9 @@ const AdminDashboard = () => {
             <BulkStudentImportView onBackToDirectory={() => setActiveTab('students')} />
           )}
 
-          {/* 4. TEST MANAGEMENT */}
+          {/* 4. ASSESSMENT MANAGEMENT */}
           {(activeTab === 'tests' || activeTab === 'assessments') && (
-            <div className="space-y-6">
-              {/* Search & Category Filter */}
-              <Card className="border-slate-200 dark:border-navy-800">
-                <CardBody className="p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div className="flex flex-1 w-full sm:w-auto items-center gap-3">
-                    <div className="relative w-full sm:w-72">
-                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                      <input
-                        type="text"
-                        placeholder="Search assessments..."
-                        value={testSearch}
-                        onChange={(e) => setTestSearch(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-navy-750 bg-slate-50 dark:bg-navy-950 text-slate-800 dark:text-slate-200 focus:outline-none"
-                      />
-                    </div>
-
-                    <select
-                      value={testCategoryFilter}
-                      onChange={(e) => setTestCategoryFilter(e.target.value)}
-                      className="py-2 px-3 text-xs rounded-lg border border-slate-200 dark:border-navy-750 bg-slate-50 dark:bg-navy-950 text-slate-700 dark:text-slate-300"
-                    >
-                      {uniqueCategories.map((cat) => (
-                        <option key={cat} value={cat}>
-                          {cat === 'ALL' ? 'All Categories' : cat}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => setIsCreateModalOpen(true)}
-                    className="text-xs"
-                  >
-                    <Plus className="w-3.5 h-3.5 mr-1" /> Create Assessment
-                  </Button>
-                </CardBody>
-              </Card>
-
-              {/* Tests Grid */}
-              {filteredTests.length === 0 ? (
-                <div className="py-12 text-center text-slate-400 text-xs">
-                  No assessments found. Click "Create Assessment" to add one.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {filteredTests.map((t) => (
-                    <Card key={t._id} className="border-slate-200 dark:border-navy-800 hover:shadow-md transition-shadow">
-                      <CardBody className="p-5 space-y-4">
-                        <div className="flex items-start justify-between gap-2">
-                          <Badge variant="outline">{t.category}</Badge>
-                          <Badge variant={t.isActive ? 'success' : 'secondary'}>
-                            {t.isActive ? 'Active' : 'Suspended'}
-                          </Badge>
-                        </div>
-
-                        <div className="space-y-1">
-                          <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                            {t.title}
-                          </h4>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
-                            {t.description || 'Institutional assessment evaluation.'}
-                          </p>
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-2 py-2 border-y border-slate-100 dark:border-navy-800 text-center font-mono text-xs">
-                          <div>
-                            <span className="text-[10px] text-slate-400 block uppercase">Duration</span>
-                            <span className="font-bold text-slate-800 dark:text-slate-200">{t.durationMinutes}m</span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-slate-400 block uppercase">Questions</span>
-                            <span className="font-bold text-slate-800 dark:text-slate-200">{t.questions?.length || 0}</span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-slate-400 block uppercase">Pass Mark</span>
-                            <span className="font-bold text-emerald-600 dark:text-emerald-400">{t.passMarks || 1}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between pt-1">
-                          <Button
-                            variant="outline"
-                            size="xs"
-                            onClick={() => handleViewSubmissions(t._id)}
-                            className="text-xs"
-                          >
-                            <Eye className="w-3.5 h-3.5 mr-1" /> Submissions
-                          </Button>
-
-                          <button
-                            onClick={() => handleDeleteTest(t._id, t.title)}
-                            title="Delete test"
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </CardBody>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </div>
+            <AssessmentManagementView />
           )}
 
           {/* 5. QUESTION BANK */}
@@ -917,3 +814,4 @@ const AdminDashboard = () => {
 };
 
 export default AdminDashboard;
+
