@@ -13,6 +13,8 @@ const {
   bulkImportStudents,
   getQuestionBank,
   addQuestionToBank,
+  updateQuestionInBank,
+  deleteQuestionFromBank,
   getAssignments,
   createAssignment,
   deleteAssignment,
@@ -49,6 +51,8 @@ router.post('/students/bulk-import', bulkImportStudents);
 // 3. Question Bank
 router.get('/questions', getQuestionBank);
 router.post('/questions', addQuestionToBank);
+router.put('/questions/:id', updateQuestionInBank);
+router.delete('/questions/:id', deleteQuestionFromBank);
 
 // 4. Assignments & Schedules
 router.get('/assignments', getAssignments);

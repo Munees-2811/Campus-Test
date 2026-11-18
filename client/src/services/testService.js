@@ -26,6 +26,16 @@ export const testService = {
     return await api.delete(`/tests/${id}`);
   },
 
+  // Start interactive test attempt
+  startAttempt: async (id) => {
+    return await api.post(`/tests/${id}/start`);
+  },
+
+  // Auto-save question answer
+  saveAnswer: async (id, payload) => {
+    return await api.post(`/tests/${id}/save-answer`, payload);
+  },
+
   // Submit test answers (Student only)
   submitTest: async (id, payload) => {
     return await api.post(`/tests/${id}/submit`, payload);

@@ -614,6 +614,107 @@ const bulkImportStudents = async (req, res, next) => {
 // 3. QUESTION BANK & QUESTIONS
 // =============================================================================
 
+const updateQuestionInBank = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { questionText, options, correctAnswer, correctAnswers, correctNumber, tolerance, marks, questionType, explanation } = req.body;
+
+    if (!questionText || !questionText.trim()) {
+      return res.status(400).json({ success: false, message: 'Question text is required.' });
+    }
+
+    if (id && id.includes('-')) {
+      const [testId, qIndexStr] = id.split('-');
+      const qIndex = parseInt(qIndexStr, 10);
+
+      const { data: test, error: fetchErr } = await supabase
+        .from('tests')
+        .select('id, questions, total_marks')
+        .eq('id', testId)
+        .single();
+
+      if (fetchErr || !test) return res.status(404).json({ success: false, message: 'Assessment not found.' });
+
+      const qList = Array.isArray(test.questions) ? [...test.questions] : [];
+      if (qIndex >= 0 && qIndex < qList.length) {
+        qList[qIndex] = {
+          ...qList[qIndex],
+          questionText: questionText.trim(),
+          options: Array.isArray(options) ? options.map((o) => String(o).trim()) : qList[qIndex].options,
+          correctAnswer: correctAnswer !== undefined ? Number(correctAnswer) : qList[qIndex].correctAnswer,
+          correctAnswers: correctAnswers !== undefined ? correctAnswers : qList[qIndex].correctAnswers,
+          correctNumber: correctNumber !== undefined ? Number(correctNumber) : qList[qIndex].correctNumber,
+          tolerance: tolerance !== undefined ? Number(tolerance) : qList[qIndex].tolerance,
+          marks: marks !== undefined ? Math.max(1, Number(marks)) : (qList[qIndex].marks || 1),
+          type: questionType || qList[qIndex].type || 'multiple_choice',
+          explanation: explanation !== undefined ? explanation : (qList[qIndex].explanation || '')
+        };
+
+        const newTotal = qList.reduce((sum, q) => sum + (Number(q.marks) || 1), 0);
+        await supabase
+          .from('tests')
+          .update({ questions: qList, total_marks: newTotal, updated_at: new Date().toISOString() })
+          .eq('id', testId);
+
+        return res.json({ success: true, message: 'Question updated successfully.', question: qList[qIndex] });
+      }
+    }
+
+    const { data: updated, error: normErr } = await supabase
+      .from('questions')
+      .update({
+        question_text: questionText.trim(),
+        options: options || [],
+        correct_answer: parseInt(correctAnswer, 10) || 0,
+        marks: parseInt(marks, 10) || 1,
+        question_type: questionType || 'multiple_choice'
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (normErr) return next(new Error(normErr.message));
+    return res.json({ success: true, message: 'Question updated in database.', question: updated });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const deleteQuestionFromBank = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (id && id.includes('-')) {
+      const [testId, qIndexStr] = id.split('-');
+      const qIndex = parseInt(qIndexStr, 10);
+
+      const { data: test, error: fetchErr } = await supabase
+        .from('tests')
+        .select('id, questions')
+        .eq('id', testId)
+        .single();
+
+      if (fetchErr || !test) return res.status(404).json({ success: false, message: 'Assessment not found.' });
+
+      const qList = Array.isArray(test.questions) ? [...test.questions] : [];
+      if (qIndex >= 0 && qIndex < qList.length) {
+        qList.splice(qIndex, 1);
+        const newTotal = qList.reduce((sum, q) => sum + (Number(q.marks) || 1), 0);
+        await supabase
+          .from('tests')
+          .update({ questions: qList, total_marks: newTotal, updated_at: new Date().toISOString() })
+          .eq('id', testId);
+
+        return res.json({ success: true, message: 'Question removed from assessment.' });
+      }
+    }
+
+    await supabase.from('questions').delete().eq('id', id);
+    return res.json({ success: true, message: 'Question deleted from question bank.' });
+  } catch (err) {
+    next(err);
+  }
+};
+
 const getQuestionBank = async (req, res, next) => {
   try {
     const { category, type, search } = req.query;
@@ -1277,6 +1378,8 @@ module.exports = {
   // Question Bank
   getQuestionBank,
   addQuestionToBank,
+  updateQuestionInBank,
+  deleteQuestionFromBank,
 
   // Test Assignments & Schedules
   getAssignments,

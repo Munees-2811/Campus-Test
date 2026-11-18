@@ -1,28 +1,61 @@
 const supabase = require('../config/supabaseClient');
 
+// Helper to parse description metadata
+const parseDescriptionMeta = (descriptionStr) => {
+  if (!descriptionStr || typeof descriptionStr !== 'string') return { description: '', meta: {} };
+  const markerIndex = descriptionStr.indexOf('<!--CAMPUSTEST_META:');
+  if (markerIndex === -1) return { description: descriptionStr, meta: {} };
+  const cleanDescription = descriptionStr.substring(0, markerIndex).trim();
+  const metaStr = descriptionStr.substring(markerIndex + '<!--CAMPUSTEST_META:'.length).replace('-->', '').trim();
+  try {
+    return { description: cleanDescription, meta: JSON.parse(metaStr) };
+  } catch {
+    return { description: cleanDescription, meta: {} };
+  }
+};
+
 // Helper to format test for student
 const formatStudentTest = (t, assignment = {}, submission = null) => {
   const qList = Array.isArray(t.questions) ? t.questions : [];
+  const { description: cleanDesc, meta } = parseDescriptionMeta(t.description);
+
+  // Check if results are released for this student
+  let isReleased = meta.releaseResultsImmediately !== false;
+  if (!isReleased && meta.releaseDate) {
+    isReleased = new Date() >= new Date(meta.releaseDate);
+  }
+
   return {
     _id: t.id,
     id: t.id,
     title: t.title,
-    description: t.description || '',
+    description: cleanDesc || t.description || '',
     category: t.category || 'General',
     durationMinutes: t.duration_minutes || 30,
     totalMarks: t.total_marks || qList.reduce((s, q) => s + (q.marks || 1), 0),
     passMarks: t.pass_marks || Math.round((t.total_marks || 10) * 0.4),
     questionsCount: qList.length,
     assessmentType: t.category || 'General',
-    startTime: assignment.created_at || t.created_at,
-    endTime: assignment.due_date || null,
-    dueDate: assignment.due_date || null,
+    startTime: meta.scheduledStartTime || assignment.created_at || t.created_at,
+    endTime: meta.scheduledEndTime || assignment.due_date || null,
+    dueDate: meta.scheduledEndTime || assignment.due_date || null,
     assignmentStatus: assignment.status || 'pending',
     alreadySubmitted: !!submission,
     previousResult: submission
       ? {
           _id: submission.id,
-          score: submission.score,
+          score: isReleased ? submission.score : null,
+          totalMarks: submission.total_marks,
+          passed: isReleased ? submission.passed : null,
+          percentage: isReleased ? Math.round((submission.score / (submission.total_marks || 1)) * 100) : null,
+          timeTakenSeconds: submission.time_taken_seconds,
+          resultsReleased: isReleased,
+          releaseDate: meta.releaseDate || null,
+          createdAt: submission.created_at
+        }
+      : null
+  };
+};
           totalMarks: submission.total_marks,
           passed: submission.passed,
           percentage: Math.round((submission.score / (submission.total_marks || 1)) * 100),

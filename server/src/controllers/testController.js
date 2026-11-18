@@ -1,48 +1,34 @@
 const supabase = require('../config/supabaseClient');
 
-// ─── Formatters ─────────────────────────────────────────────────────────────
+// ─── Formatters & Metadata Serialization ─────────────────────────────────────
 
 const parseDescriptionMeta = (descriptionStr) => {
+  const defaultMeta = {
+    status: 'published',
+    negativeMarking: false,
+    negativeMarkValue: 0.25,
+    randomizeQuestions: false,
+    allowRetakes: false,
+    maxRetakes: 1,
+    releaseResultsImmediately: true,
+    releaseDate: null,
+    scheduledStartTime: null,
+    scheduledEndTime: null,
+    targetClass: 'All Batches',
+  };
+
   if (!descriptionStr || typeof descriptionStr !== 'string') {
-    return {
-      description: '',
-      meta: {
-        status: 'published',
-        negativeMarking: false,
-        negativeMarkValue: 0.25,
-        allowRetakes: false,
-        maxRetakes: 1,
-        releaseResultsImmediately: true,
-        releaseDate: null,
-        scheduledStartTime: null,
-        scheduledEndTime: null,
-        targetClass: 'All Batches',
-      }
-    };
+    return { description: '', meta: defaultMeta };
   }
 
   const markerIndex = descriptionStr.indexOf('<!--CAMPUSTEST_META:');
   if (markerIndex === -1) {
-    return {
-      description: descriptionStr,
-      meta: {
-        status: 'published',
-        negativeMarking: false,
-        negativeMarkValue: 0.25,
-        allowRetakes: false,
-        maxRetakes: 1,
-        releaseResultsImmediately: true,
-        releaseDate: null,
-        scheduledStartTime: null,
-        scheduledEndTime: null,
-        targetClass: 'All Batches',
-      }
-    };
+    return { description: descriptionStr, meta: defaultMeta };
   }
 
   const cleanDescription = descriptionStr.substring(0, markerIndex).trim();
   const metaStr = descriptionStr.substring(markerIndex + '<!--CAMPUSTEST_META:'.length).replace('-->', '').trim();
-  
+
   try {
     const meta = JSON.parse(metaStr);
     return {
@@ -51,6 +37,7 @@ const parseDescriptionMeta = (descriptionStr) => {
         status: meta.status || 'published',
         negativeMarking: !!meta.negativeMarking,
         negativeMarkValue: Number(meta.negativeMarkValue) || 0.25,
+        randomizeQuestions: !!meta.randomizeQuestions,
         allowRetakes: !!meta.allowRetakes,
         maxRetakes: Number(meta.maxRetakes) || 1,
         releaseResultsImmediately: meta.releaseResultsImmediately !== undefined ? !!meta.releaseResultsImmediately : true,
@@ -61,21 +48,7 @@ const parseDescriptionMeta = (descriptionStr) => {
       }
     };
   } catch (err) {
-    return {
-      description: cleanDescription,
-      meta: {
-        status: 'published',
-        negativeMarking: false,
-        negativeMarkValue: 0.25,
-        allowRetakes: false,
-        maxRetakes: 1,
-        releaseResultsImmediately: true,
-        releaseDate: null,
-        scheduledStartTime: null,
-        scheduledEndTime: null,
-        targetClass: 'All Batches',
-      }
-    };
+    return { description: cleanDescription, meta: defaultMeta };
   }
 };
 
@@ -85,6 +58,7 @@ const serializeDescriptionMeta = (description, meta = {}) => {
     status: meta.status || 'published',
     negativeMarking: !!meta.negativeMarking,
     negativeMarkValue: Number(meta.negativeMarkValue) || 0.25,
+    randomizeQuestions: !!meta.randomizeQuestions,
     allowRetakes: !!meta.allowRetakes,
     maxRetakes: Number(meta.maxRetakes) || 1,
     releaseResultsImmediately: meta.releaseResultsImmediately !== undefined ? !!meta.releaseResultsImmediately : true,
@@ -133,9 +107,11 @@ const formatResult = (r) => ({
   createdAt: r.created_at,
 });
 
+// Strips answer keys before sending questions to students
 const stripAnswers = (questions) =>
-  (questions || []).map((q) => {
+  (questions || []).map((q, idx) => {
     const stripped = {
+      originalIndex: q.originalIndex !== undefined ? q.originalIndex : idx,
       type: q.type || 'multiple_choice',
       questionText: q.questionText,
       marks: q.marks || 1,
@@ -145,10 +121,9 @@ const stripAnswers = (questions) =>
       buggyCode: q.buggyCode || '',
       schemaSql: q.schemaSql || '',
       codeSnippet: q.codeSnippet || '',
-      explanation: q.explanation || '',
+      // correctAnswer, correctAnswers, correctNumber, correctSolution, tolerance & explanation stripped
     };
 
-    // Include sample test cases for coding/debugging/sql, but hide answers/expected output
     if (Array.isArray(q.testCases)) {
       stripped.testCases = q.testCases
         .filter((tc) => !tc.isHidden)
@@ -162,7 +137,17 @@ const stripAnswers = (questions) =>
     return stripped;
   });
 
-// ─── Helper: Validate Question Builder Inputs ──────────────────────────────
+// Fisher-Yates shuffle with question index tracking
+const shuffleQuestions = (questions) => {
+  const indexed = questions.map((q, idx) => ({ ...q, originalIndex: idx }));
+  for (let i = indexed.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [indexed[i], indexed[j]] = [indexed[j], indexed[i]];
+  }
+  return indexed;
+};
+
+// ─── Input Validation ────────────────────────────────────────────────────────
 
 const validateQuestions = (questions) => {
   if (!Array.isArray(questions) || questions.length === 0) {
@@ -182,7 +167,8 @@ const validateQuestions = (questions) => {
       return `Question #${num}: Marks must be a positive number.`;
     }
 
-    if (['multiple_choice', 'aptitude', 'output_prediction', 'technical'].includes(type)) {
+    // Single choice types
+    if (['multiple_choice', 'logical_reasoning', 'quantitative_aptitude', 'verbal_ability', 'aptitude', 'output_prediction', 'technical'].includes(type)) {
       if (!Array.isArray(q.options) || q.options.length < 2) {
         return `Question #${num} (${type}): Must provide at least 2 answer choices.`;
       }
@@ -196,27 +182,41 @@ const validateQuestions = (questions) => {
       }
     }
 
+    // Multiple correct answers type
+    if (type === 'multiple_answers') {
+      if (!Array.isArray(q.options) || q.options.length < 2) {
+        return `Question #${num} (Multiple Answers): Must provide at least 2 choices.`;
+      }
+      if (!Array.isArray(q.correctAnswers) || q.correctAnswers.length === 0) {
+        return `Question #${num} (Multiple Answers): Please select at least one correct choice.`;
+      }
+    }
+
+    // Numerical answer type
+    if (type === 'numerical') {
+      if (q.correctNumber === undefined || q.correctNumber === null || isNaN(Number(q.correctNumber))) {
+        return `Question #${num} (Numerical): Please provide a valid correct numerical value.`;
+      }
+    }
+
+    // Coding challenge
     if (type === 'coding') {
       if (!q.starterCode || !q.starterCode.trim()) {
-        return `Question #${num} (Coding): Please provide starter/template code for students.`;
-      }
-      if (!Array.isArray(q.testCases) || q.testCases.length === 0) {
-        return `Question #${num} (Coding): At least 1 test case with input and expected output is required.`;
+        return `Question #${num} (Coding): Please provide starter code.`;
       }
     }
 
+    // Debugging arena
     if (type === 'debugging') {
       if (!q.buggyCode || !q.buggyCode.trim()) {
-        return `Question #${num} (Debugging): Please provide buggy code for the student to diagnose.`;
+        return `Question #${num} (Debugging): Please provide buggy code.`;
       }
     }
 
+    // SQL query arena
     if (type === 'sql') {
       if (!q.schemaSql || !q.schemaSql.trim()) {
-        return `Question #${num} (SQL): Please supply table schema DDL/DML setup.`;
-      }
-      if (!q.expectedQuery && (!Array.isArray(q.options) || q.options.length === 0)) {
-        return `Question #${num} (SQL): Please supply either expected query or query choices.`;
+        return `Question #${num} (SQL): Please supply table schema DDL.`;
       }
     }
   }
@@ -231,7 +231,7 @@ const getTests = async (req, res, next) => {
     const isStudent = req.user.role === 'student';
 
     if (!isStudent) {
-      // Admin: fetch all tests including drafts
+      // Admin: fetch all assessments
       const { data, error } = await supabase
         .from('tests')
         .select('*, profiles!created_by(id, name, email)')
@@ -250,22 +250,34 @@ const getTests = async (req, res, next) => {
       return res.json({ success: true, count: tests.length, tests });
     }
 
-    // Student: fetch tests (only active and published or assigned)
+    // Student: fetch only assigned tests for this student
+    const { data: assignments, error: assignError } = await supabase
+      .from('assignments')
+      .select('test_id, due_date, status')
+      .eq('student_id', req.user.id);
+
+    if (assignError) return next(new Error(assignError.message));
+
+    const assignedTestIds = (assignments || []).map((a) => a.test_id);
+
+    if (assignedTestIds.length === 0) {
+      return res.json({ success: true, count: 0, tests: [] });
+    }
+
     const { data: testsData, error: testsError } = await supabase
       .from('tests')
       .select('*')
+      .in('id', assignedTestIds)
       .eq('is_active', true)
       .order('created_at', { ascending: false });
 
     if (testsError) return next(new Error(testsError.message));
 
-    // Fetch student's existing submissions
-    const { data: submissionsData, error: submissionsError } = await supabase
+    // Fetch student's submissions
+    const { data: submissionsData } = await supabase
       .from('results')
       .select('id, test_id, score, total_marks, passed, created_at')
       .eq('student_id', req.user.id);
-
-    if (submissionsError) return next(new Error(submissionsError.message));
 
     const submissionsMap = {};
     (submissionsData || []).forEach((r) => {
@@ -275,7 +287,6 @@ const getTests = async (req, res, next) => {
     const tests = (testsData || [])
       .map((t) => {
         const formatted = formatTest(t);
-        // Exclude drafts from students
         if (formatted.status === 'draft' || formatted.status === 'archived') {
           return null;
         }
@@ -324,14 +335,32 @@ const getTestById = async (req, res, next) => {
     }
 
     let previousResult = null;
+    let existingAttempt = null;
 
     if (isStudent) {
-      // Check if test is draft or archived
+      // 1. Verify student is assigned to this test
+      const { data: assignment, error: assignErr } = await supabase
+        .from('assignments')
+        .select('*')
+        .eq('test_id', req.params.id)
+        .eq('student_id', req.user.id)
+        .maybeSingle();
+
+      if (assignErr) return next(new Error(assignErr.message));
+
+      if (!assignment) {
+        return res.status(403).json({
+          success: false,
+          message: 'You have not been assigned to this assessment. Please contact your instructor.'
+        });
+      }
+
+      // 2. Check draft/archived status
       if (test.status === 'draft' || test.status === 'archived') {
         return res.status(403).json({ success: false, message: 'This assessment is currently unavailable.' });
       }
 
-      // Check scheduling window
+      // 3. Check scheduling window
       const now = new Date();
       if (test.settings?.scheduledStartTime) {
         const start = new Date(test.settings.scheduledStartTime);
@@ -352,19 +381,37 @@ const getTestById = async (req, res, next) => {
         }
       }
 
-      test.questions = stripAnswers(data.questions || []);
+      // 4. Fetch or resume attempt
+      const { data: attempt } = await supabase
+        .from('attempts')
+        .select('*')
+        .eq('test_id', req.params.id)
+        .eq('student_id', req.user.id)
+        .eq('status', 'in_progress')
+        .order('started_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      const { data: resultData, error: resultError } = await supabase
+      if (attempt) {
+        existingAttempt = attempt;
+        // Fetch saved question-level answers for this attempt
+        const { data: savedSubmissions } = await supabase
+          .from('submissions')
+          .select('question_index, selected_option, submitted_code')
+          .eq('attempt_id', attempt.id);
+
+        existingAttempt.savedAnswers = savedSubmissions || [];
+      }
+
+      // 5. Check completed results
+      const { data: resultData } = await supabase
         .from('results')
         .select('id, score, total_marks, passed, time_taken_seconds, created_at, answers')
         .eq('test_id', req.params.id)
         .eq('student_id', req.user.id)
         .maybeSingle();
 
-      if (resultError) return next(new Error(resultError.message));
-
       if (resultData) {
-        // Check if results are released
         const releaseImmediately = test.settings?.releaseResultsImmediately !== false;
         let resultsReleased = releaseImmediately;
 
@@ -384,9 +431,145 @@ const getTestById = async (req, res, next) => {
           releaseDate: test.settings?.releaseDate || null
         };
       }
+
+      // 6. Strip answers and optionally randomize questions
+      let processedQuestions = (data.questions || []).map((q, idx) => ({ ...q, originalIndex: idx }));
+      if (test.settings?.randomizeQuestions) {
+        processedQuestions = shuffleQuestions(processedQuestions);
+      }
+
+      test.questions = stripAnswers(processedQuestions);
     }
 
-    return res.json({ success: true, test, previousResult });
+    return res.json({ success: true, test, previousResult, attempt: existingAttempt });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── startAttempt (Initialize Attempt in Supabase) ───────────────────────────
+
+const startAttempt = async (req, res, next) => {
+  try {
+    const studentId = req.user.id;
+    const testId = req.params.id;
+
+    // Verify assignment
+    const { data: assignment } = await supabase
+      .from('assignments')
+      .select('id')
+      .eq('test_id', testId)
+      .eq('student_id', studentId)
+      .maybeSingle();
+
+    if (!assignment) {
+      return res.status(403).json({ success: false, message: 'Not assigned to this assessment.' });
+    }
+
+    // Check for active in_progress attempt
+    const { data: existingAttempt } = await supabase
+      .from('attempts')
+      .select('*')
+      .eq('test_id', testId)
+      .eq('student_id', studentId)
+      .eq('status', 'in_progress')
+      .maybeSingle();
+
+    if (existingAttempt) {
+      return res.json({ success: true, attempt: existingAttempt, message: 'Resumed existing attempt.' });
+    }
+
+    // Create new attempt
+    const { data: newAttempt, error } = await supabase
+      .from('attempts')
+      .insert({
+        test_id: testId,
+        student_id: studentId,
+        started_at: new Date().toISOString(),
+        status: 'in_progress',
+        time_spent: 0,
+        score: 0
+      })
+      .select()
+      .single();
+
+    if (error) return next(new Error(error.message));
+
+    // Update assignment status to in_progress
+    await supabase
+      .from('assignments')
+      .update({ status: 'in_progress' })
+      .eq('test_id', testId)
+      .eq('student_id', studentId);
+
+    return res.status(201).json({ success: true, attempt: newAttempt });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── saveAnswer (Auto-save student response in Supabase) ─────────────────────
+
+const saveAnswer = async (req, res, next) => {
+  try {
+    const studentId = req.user.id;
+    const testId = req.params.id;
+    const { questionIndex, selectedOption, submittedCode, timeSpent } = req.body;
+
+    // Find active attempt
+    const { data: attempt } = await supabase
+      .from('attempts')
+      .select('id')
+      .eq('test_id', testId)
+      .eq('student_id', studentId)
+      .eq('status', 'in_progress')
+      .maybeSingle();
+
+    const attemptId = attempt?.id || null;
+
+    // Upsert into submissions table
+    // Delete previous answer for this question in this attempt if exists
+    if (attemptId) {
+      await supabase
+        .from('submissions')
+        .delete()
+        .eq('attempt_id', attemptId)
+        .eq('question_index', questionIndex);
+    } else {
+      await supabase
+        .from('submissions')
+        .delete()
+        .eq('test_id', testId)
+        .eq('student_id', studentId)
+        .eq('question_index', questionIndex);
+    }
+
+    const { data: saved, error } = await supabase
+      .from('submissions')
+      .insert({
+        attempt_id: attemptId,
+        test_id: testId,
+        student_id: studentId,
+        question_index: questionIndex,
+        selected_option: selectedOption !== undefined && selectedOption !== null ? Number(selectedOption) : null,
+        submitted_code: submittedCode ? String(submittedCode) : null,
+        is_correct: false,
+        marks_awarded: 0,
+      })
+      .select()
+      .single();
+
+    if (error) return next(new Error(error.message));
+
+    // Optionally update time_spent on attempt
+    if (attemptId && timeSpent) {
+      await supabase
+        .from('attempts')
+        .update({ time_spent: Math.max(0, parseInt(timeSpent, 10)) })
+        .eq('id', attemptId);
+    }
+
+    return res.json({ success: true, message: 'Answer saved.', submission: saved });
   } catch (err) {
     next(err);
   }
@@ -405,9 +588,9 @@ const createTest = async (req, res, next) => {
       totalMarks: clientTotalMarks,
       questions,
       isActive = true,
-      status = 'published', // 'published', 'draft', 'archived'
+      status = 'published',
       settings = {},
-      assignStudents = [] // optional student IDs to auto-assign
+      assignStudents = []
     } = req.body;
 
     if (!title || !title.trim()) {
@@ -419,7 +602,6 @@ const createTest = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Duration must be greater than 0 minutes.' });
     }
 
-    // Validate questions
     const qError = validateQuestions(questions);
     if (qError) {
       return res.status(400).json({ success: false, message: qError });
@@ -437,6 +619,7 @@ const createTest = async (req, res, next) => {
       status: status || 'published',
       negativeMarking: !!settings.negativeMarking,
       negativeMarkValue: Number(settings.negativeMarkValue) || 0.25,
+      randomizeQuestions: !!settings.randomizeQuestions,
       allowRetakes: !!settings.allowRetakes,
       maxRetakes: Number(settings.maxRetakes) || 1,
       releaseResultsImmediately: settings.releaseResultsImmediately !== undefined ? !!settings.releaseResultsImmediately : true,
@@ -447,7 +630,6 @@ const createTest = async (req, res, next) => {
     };
 
     const serializedDesc = serializeDescriptionMeta(description, mergedSettings);
-
     const isPublished = mergedSettings.status === 'published';
 
     const { data, error } = await supabase
@@ -533,7 +715,6 @@ const updateTest = async (req, res, next) => {
       updateObj.duration_minutes = dur;
     }
 
-    // Merge settings & description
     const currentParsed = parseDescriptionMeta(existing.description);
     const newSettings = {
       ...currentParsed.meta,
@@ -581,7 +762,6 @@ const updateTest = async (req, res, next) => {
 
     if (error) return next(new Error(error.message));
 
-    // Handle student assignments if provided
     if (Array.isArray(assignStudents) && assignStudents.length > 0) {
       const assignmentRows = assignStudents.map((sid) => ({
         test_id: data.id,
@@ -604,7 +784,7 @@ const updateTest = async (req, res, next) => {
   }
 };
 
-// ─── deleteTest (or Archive) ────────────────────────────────────────────────
+// ─── deleteTest ─────────────────────────────────────────────────────────────
 
 const deleteTest = async (req, res, next) => {
   try {
@@ -632,17 +812,10 @@ const deleteTest = async (req, res, next) => {
     }
 
     // Permanent delete
-    const { error: resultsError } = await supabase
-      .from('results')
-      .delete()
-      .eq('test_id', req.params.id);
-
-    if (resultsError) return next(new Error(resultsError.message));
-
-    await supabase
-      .from('assignments')
-      .delete()
-      .eq('test_id', req.params.id);
+    await supabase.from('submissions').delete().eq('test_id', req.params.id);
+    await supabase.from('attempts').delete().eq('test_id', req.params.id);
+    await supabase.from('results').delete().eq('test_id', req.params.id);
+    await supabase.from('assignments').delete().eq('test_id', req.params.id);
 
     const { error } = await supabase
       .from('tests')
@@ -657,16 +830,18 @@ const deleteTest = async (req, res, next) => {
   }
 };
 
-// ─── submitTest (With Negative Marking, Coding/SQL/MCQ & Retake rules) ───────
+// ─── submitTest (Automatic Evaluation for All Question Types) ────────────────
 
 const submitTest = async (req, res, next) => {
   try {
     const { answers, timeTakenSeconds } = req.body;
+    const studentId = req.user.id;
+    const testId = req.params.id;
 
     const { data: test, error: testError } = await supabase
       .from('tests')
       .select('*')
-      .eq('id', req.params.id)
+      .eq('id', testId)
       .single();
 
     if (testError || !test) {
@@ -679,81 +854,142 @@ const submitTest = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'This assessment is currently not active.' });
     }
 
-    // Check retake policy
+    // Verify retake policy
     const { data: existing } = await supabase
       .from('results')
       .select('id, score, total_marks')
-      .eq('test_id', req.params.id)
-      .eq('student_id', req.user.id)
+      .eq('test_id', testId)
+      .eq('student_id', studentId)
       .maybeSingle();
 
     if (existing && !meta.allowRetakes) {
       return res.status(400).json({
         success: false,
-        message: 'Retakes are disabled for this assessment. Your initial score has already been recorded.'
+        message: 'Retakes are disabled for this assessment. Your score has already been recorded.'
       });
     }
 
-    // Evaluate answers
+    // Automatic Evaluation Algorithm supporting all MCQ, Aptitude & Arena archetypes
     const questions = test.questions || [];
-    let score = 0;
+    let totalScore = 0;
+
     const evaluatedAnswers = (answers || []).map((a) => {
-      const question = questions[a.questionIndex];
+      // Find question by originalIndex if present, otherwise questionIndex
+      const qIdx = a.originalIndex !== undefined ? a.originalIndex : a.questionIndex;
+      const question = questions[qIdx];
+
       if (!question) {
-        return { questionIndex: a.questionIndex, selectedOption: a.selectedOption, isCorrect: false };
+        return {
+          questionIndex: a.questionIndex,
+          selectedOption: a.selectedOption,
+          submittedAnswer: a.submittedAnswer || a.submittedCode || null,
+          isCorrect: false,
+          marksAwarded: 0
+        };
       }
 
       const type = question.type || 'multiple_choice';
       let isCorrect = false;
+      let isAnswered = false;
 
-      if (['multiple_choice', 'aptitude', 'output_prediction', 'technical'].includes(type)) {
-        isCorrect = question.correctAnswer === a.selectedOption;
-      } else if (type === 'coding' || type === 'debugging') {
-        // Match submitted code or correct test case validation
-        if (a.submittedCode && question.correctSolution) {
-          isCorrect = a.submittedCode.trim() === question.correctSolution.trim();
-        } else if (a.selectedOption !== undefined) {
-          isCorrect = question.correctAnswer === a.selectedOption;
-        } else {
-          isCorrect = true; // Auto-pass sandbox execution
+      // 1. Single Choice: MCQ, Logical Reasoning, Quantitative Aptitude, Verbal Ability, Output Prediction
+      if (['multiple_choice', 'logical_reasoning', 'quantitative_aptitude', 'verbal_ability', 'aptitude', 'output_prediction', 'technical'].includes(type)) {
+        if (a.selectedOption !== undefined && a.selectedOption !== null && a.selectedOption !== '') {
+          isAnswered = true;
+          isCorrect = Number(question.correctAnswer) === Number(a.selectedOption);
         }
-      } else if (type === 'sql') {
-        if (a.submittedQuery && question.expectedQuery) {
-          isCorrect = a.submittedQuery.toLowerCase().replace(/\s+/g, ' ').trim() ===
-                      question.expectedQuery.toLowerCase().replace(/\s+/g, ' ').trim();
-        } else if (a.selectedOption !== undefined) {
-          isCorrect = question.correctAnswer === a.selectedOption;
+      }
+      // 2. Multiple Correct Answers
+      else if (type === 'multiple_answers') {
+        const correctSet = new Set((question.correctAnswers || [question.correctAnswer || 0]).map(Number));
+        const selectedArr = Array.isArray(a.selectedOptions)
+          ? a.selectedOptions.map(Number)
+          : Array.isArray(a.selectedOption)
+          ? a.selectedOption.map(Number)
+          : [];
+
+        if (selectedArr.length > 0) {
+          isAnswered = true;
+          const selectedSet = new Set(selectedArr);
+          isCorrect = correctSet.size === selectedSet.size && [...correctSet].every((val) => selectedSet.has(val));
+        }
+      }
+      // 3. Numerical Answer (with tolerance support)
+      else if (type === 'numerical') {
+        const rawNum = a.submittedAnswer !== undefined ? a.submittedAnswer : a.submittedCode;
+        if (rawNum !== undefined && rawNum !== null && rawNum !== '') {
+          isAnswered = true;
+          const candidateVal = parseFloat(rawNum);
+          const targetVal = Number(question.correctNumber);
+          const tol = Number(question.tolerance) || 0;
+          isCorrect = !isNaN(candidateVal) && Math.abs(candidateVal - targetVal) <= tol;
+        }
+      }
+      // 4. Coding & Debugging Arena
+      else if (type === 'coding' || type === 'debugging') {
+        const code = a.submittedCode || a.submittedAnswer || '';
+        if (code && code.trim()) {
+          isAnswered = true;
+          if (question.correctSolution && question.correctSolution.trim()) {
+            isCorrect = code.trim() === question.correctSolution.trim();
+          } else if (a.selectedOption !== undefined && a.selectedOption !== null) {
+            isCorrect = Number(question.correctAnswer) === Number(a.selectedOption);
+          } else {
+            isCorrect = true; // Complete submission accepted
+          }
+        }
+      }
+      // 5. SQL Query Arena
+      else if (type === 'sql') {
+        const sql = a.submittedQuery || a.submittedCode || a.submittedAnswer || '';
+        if (sql && sql.trim()) {
+          isAnswered = true;
+          if (question.expectedQuery) {
+            isCorrect = sql.toLowerCase().replace(/\s+/g, ' ').trim() ===
+                        question.expectedQuery.toLowerCase().replace(/\s+/g, ' ').trim();
+          } else if (a.selectedOption !== undefined && a.selectedOption !== null) {
+            isCorrect = Number(question.correctAnswer) === Number(a.selectedOption);
+          }
         }
       }
 
       const qMarks = Number(question.marks) || 1;
+      let marksAwarded = 0;
 
       if (isCorrect) {
-        score += qMarks;
-      } else if (meta.negativeMarking && a.selectedOption !== null && a.selectedOption !== undefined) {
-        // Deduct negative marks if answered incorrectly
+        marksAwarded = qMarks;
+        totalScore += qMarks;
+      } else if (meta.negativeMarking && isAnswered) {
+        // Deduct negative marking penalty if answered incorrectly
         const penalty = Number(meta.negativeMarkValue) || 0.25;
-        score = Math.max(0, score - penalty);
+        marksAwarded = -penalty;
+        totalScore = Math.max(0, totalScore - penalty);
       }
 
       return {
         questionIndex: a.questionIndex,
-        selectedOption: a.selectedOption,
-        submittedCode: a.submittedCode || null,
-        isCorrect
+        originalIndex: qIdx,
+        type,
+        selectedOption: a.selectedOption !== undefined ? a.selectedOption : null,
+        selectedOptions: a.selectedOptions || null,
+        submittedAnswer: a.submittedAnswer || a.submittedCode || null,
+        isCorrect,
+        marksAwarded,
+        isAnswered
       };
     });
 
-    const passed = score >= test.pass_marks;
+    const finalScore = Math.max(0, Math.round(totalScore * 100) / 100);
+    const passed = finalScore >= test.pass_marks;
 
+    // 1. Update or Insert Result in Supabase
     let result;
     if (existing && meta.allowRetakes) {
-      // Overwrite/update existing result for allowed retake
       const { data: updatedResult, error: updateError } = await supabase
         .from('results')
         .update({
           answers: evaluatedAnswers,
-          score: Math.round(score * 100) / 100,
+          score: finalScore,
           total_marks: test.total_marks,
           passed,
           time_taken_seconds: timeTakenSeconds || 0,
@@ -769,10 +1005,10 @@ const submitTest = async (req, res, next) => {
       const { data: newResult, error: insertError } = await supabase
         .from('results')
         .insert({
-          test_id: req.params.id,
-          student_id: req.user.id,
+          test_id: testId,
+          student_id: studentId,
           answers: evaluatedAnswers,
-          score: Math.round(score * 100) / 100,
+          score: finalScore,
           total_marks: test.total_marks,
           passed,
           time_taken_seconds: timeTakenSeconds || 0,
@@ -784,12 +1020,61 @@ const submitTest = async (req, res, next) => {
       result = newResult;
     }
 
-    // Update assignment status to completed
+    // 2. Mark in-progress attempt completed in Supabase
+    const { data: activeAttempt } = await supabase
+      .from('attempts')
+      .select('id')
+      .eq('test_id', testId)
+      .eq('student_id', studentId)
+      .eq('status', 'in_progress')
+      .maybeSingle();
+
+    if (activeAttempt) {
+      await supabase
+        .from('attempts')
+        .update({
+          status: 'submitted',
+          completed_at: new Date().toISOString(),
+          time_spent: timeTakenSeconds || 0,
+          score: finalScore
+        })
+        .eq('id', activeAttempt.id);
+
+      // Record final submissions in submissions table
+      for (const ans of evaluatedAnswers) {
+        await supabase
+          .from('submissions')
+          .delete()
+          .eq('attempt_id', activeAttempt.id)
+          .eq('question_index', ans.questionIndex);
+
+        await supabase.from('submissions').insert({
+          attempt_id: activeAttempt.id,
+          test_id: testId,
+          student_id: studentId,
+          question_index: ans.questionIndex,
+          selected_option: ans.selectedOption !== null && ans.selectedOption !== undefined ? Number(ans.selectedOption) : null,
+          submitted_code: ans.submittedAnswer ? String(ans.submittedAnswer) : null,
+          is_correct: ans.isCorrect,
+          marks_awarded: Math.max(0, ans.marksAwarded)
+        });
+      }
+    }
+
+    // 3. Mark assignment completed
     await supabase
       .from('assignments')
       .update({ status: 'completed' })
-      .eq('test_id', req.params.id)
-      .eq('student_id', req.user.id);
+      .eq('test_id', testId)
+      .eq('student_id', studentId);
+
+    // 4. Secure Result Response based on Admin Release Policy
+    const releaseImmediately = meta.releaseResultsImmediately !== false;
+    let resultsReleased = releaseImmediately;
+
+    if (!releaseImmediately && meta.releaseDate) {
+      resultsReleased = new Date() >= new Date(meta.releaseDate);
+    }
 
     const formatted = formatResult(result);
     formatted.test = {
@@ -798,13 +1083,20 @@ const submitTest = async (req, res, next) => {
       category: test.category,
       totalMarks: test.total_marks,
       passMarks: test.pass_marks,
-      releaseResultsImmediately: meta.releaseResultsImmediately !== false,
+      resultsReleased,
       releaseDate: meta.releaseDate || null
     };
 
+    if (!resultsReleased) {
+      // Conceal final marks and detailed answers until released
+      formatted.score = null;
+      formatted.passed = null;
+      formatted.answers = [];
+    }
+
     return res.status(201).json({
       success: true,
-      message: 'Assessment submitted successfully.',
+      message: 'Assessment submitted and evaluated successfully.',
       result: formatted
     });
   } catch (err) {
@@ -845,6 +1137,7 @@ const getMyResults = async (req, res, next) => {
         if (!isReleased) {
           formatted.score = null;
           formatted.passed = null;
+          formatted.answers = [];
         }
       }
       return formatted;
@@ -900,6 +1193,8 @@ const getTestResultsAdmin = async (req, res, next) => {
 module.exports = {
   getTests,
   getTestById,
+  startAttempt,
+  saveAnswer,
   createTest,
   updateTest,
   deleteTest,

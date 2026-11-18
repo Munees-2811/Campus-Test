@@ -3,6 +3,8 @@ const router = express.Router();
 const {
   getTests,
   getTestById,
+  startAttempt,
+  saveAnswer,
   createTest,
   updateTest,
   deleteTest,
@@ -26,7 +28,9 @@ router.route('/:id')
   .put(protect, authorize('admin'), updateTest)
   .delete(protect, authorize('admin'), deleteTest);
 
-// Student submit route
+// Student interactive test taking routes
+router.post('/:id/start', protect, authorize('student'), startAttempt);
+router.post('/:id/save-answer', protect, authorize('student'), saveAnswer);
 router.post('/:id/submit', protect, authorize('student'), submitTest);
 
 // Admin view results for a test

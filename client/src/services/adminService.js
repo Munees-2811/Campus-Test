@@ -39,6 +39,12 @@ export const adminService = {
   addQuestionToBank: async (questionData) => {
     return await api.post('/admin/questions', questionData);
   },
+  updateQuestionInBank: async (id, questionData) => {
+    return await api.put(`/admin/questions/${id}`, questionData);
+  },
+  deleteQuestionFromBank: async (id) => {
+    return await api.delete(`/admin/questions/${id}`);
+  },
 
   // 4. Test Assignments & Schedules
   getAssignments: async () => {

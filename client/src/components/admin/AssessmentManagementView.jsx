@@ -66,6 +66,7 @@ const AssessmentManagementView = () => {
     settings: {
       negativeMarking: false,
       negativeMarkValue: 0.25,
+      randomizeQuestions: false,
       allowRetakes: false,
       maxRetakes: 1,
       releaseResultsImmediately: true,
@@ -126,6 +127,7 @@ const AssessmentManagementView = () => {
       settings: {
         negativeMarking: !!test.settings?.negativeMarking,
         negativeMarkValue: test.settings?.negativeMarkValue || 0.25,
+        randomizeQuestions: !!test.settings?.randomizeQuestions,
         allowRetakes: !!test.settings?.allowRetakes,
         maxRetakes: test.settings?.maxRetakes || 1,
         releaseResultsImmediately: test.settings?.releaseResultsImmediately !== undefined ? test.settings.releaseResultsImmediately : true,
@@ -691,6 +693,32 @@ const AssessmentManagementView = () => {
                     </select>
                   </div>
                 )}
+              </div>
+
+              {/* Question Randomization */}
+              <div className="p-4 bg-slate-50 dark:bg-navy-950 rounded-xl border border-slate-200/80 dark:border-navy-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h5 className="text-xs font-bold text-slate-900 dark:text-white">
+                      Question Randomization / Shuffling
+                    </h5>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Shuffle questions randomly for each student to prevent malpractice
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.settings.randomizeQuestions}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        settings: { ...formData.settings, randomizeQuestions: e.target.checked }
+                      })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-navy-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-electric-600"></div>
+                  </label>
+                </div>
               </div>
 
               {/* Retakes Policy */}
