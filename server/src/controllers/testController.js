@@ -877,6 +877,7 @@ const submitTest = async (req, res, next) => {
       // Find question by originalIndex if present, otherwise questionIndex
       const qIdx = a.originalIndex !== undefined ? a.originalIndex : a.questionIndex;
       const question = questions[qIdx];
+      let marksAwarded = 0;
 
       if (!question) {
         return {
@@ -986,7 +987,7 @@ const submitTest = async (req, res, next) => {
       }
 
       const qMarks = Number(question.marks) || 1;
-      let marksAwarded = 0;
+      marksAwarded = 0;
 
       if (isCorrect) {
         marksAwarded = qMarks;

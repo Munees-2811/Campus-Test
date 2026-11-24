@@ -47,17 +47,37 @@ const runLocalJavaScript = (sourceCode, stdin = '') => {
   let status = { id: 3, description: 'Accepted' };
 
   try {
-    const { VM } = require('node:vm') ? require('vm') : {};
     const vm = require('vm');
+    const mockFs = {
+      readFileSync: (fd) => {
+        if (fd === 0 || fd === '0' || fd === '/dev/stdin') return stdin;
+        return stdin;
+      }
+    };
+
     const sandbox = {
       console: {
         log: (...args) => logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')),
         error: (...args) => logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')),
         warn: (...args) => logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '))
       },
+      require: (mod) => {
+        if (mod === 'fs') return mockFs;
+        return {};
+      },
+      fs: mockFs,
       input: stdin,
       stdin: stdin,
-      process: { env: {} }
+      process: {
+        env: {},
+        exit: () => {},
+        stdin: {
+          on: (event, cb) => {
+            if (event === 'data') cb(stdin);
+            if (event === 'end') cb();
+          }
+        }
+      }
     };
 
     const context = vm.createContext(sandbox);

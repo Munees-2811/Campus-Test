@@ -73,6 +73,14 @@ const QuestionBankView = () => {
     tolerance: 0,
     marks: 1,
     questionType: 'multiple_choice',
+    language: 'javascript',
+    starterCode: '',
+    buggyCode: '',
+    correctSolution: '',
+    testCases: [
+      { input: '', expectedOutput: '', isHidden: false },
+      { input: '', expectedOutput: '', isHidden: true }
+    ],
     explanation: ''
   };
 
@@ -143,9 +151,35 @@ const QuestionBankView = () => {
       tolerance: q.tolerance || 0,
       marks: q.marks || 1,
       questionType: q.type || 'multiple_choice',
+      language: q.language || 'javascript',
+      starterCode: q.starterCode || '',
+      buggyCode: q.buggyCode || '',
+      correctSolution: q.correctSolution || '',
+      testCases: Array.isArray(q.testCases) && q.testCases.length > 0 ? q.testCases : [
+        { input: '', expectedOutput: '', isHidden: false },
+        { input: '', expectedOutput: '', isHidden: true }
+      ],
       explanation: q.explanation || ''
     });
     setIsModalOpen(true);
+  };
+
+  const handleTestCaseChange = (index, field, value) => {
+    const updated = [...(formData.testCases || [])];
+    updated[index] = { ...updated[index], [field]: value };
+    setFormData({ ...formData, testCases: updated });
+  };
+
+  const addTestCase = () => {
+    const updated = [...(formData.testCases || [])];
+    updated.push({ input: '', expectedOutput: '', isHidden: false });
+    setFormData({ ...formData, testCases: updated });
+  };
+
+  const removeTestCase = (index) => {
+    if ((formData.testCases || []).length <= 1) return;
+    const updated = formData.testCases.filter((_, i) => i !== index);
+    setFormData({ ...formData, testCases: updated });
   };
 
   const handleOptionChange = (index, value) => {
@@ -540,6 +574,199 @@ const QuestionBankView = () => {
                   placeholder="0.05"
                   className="w-full py-1.5 px-3 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-white dark:bg-navy-900 text-slate-900 dark:text-slate-100"
                 />
+              </div>
+            </div>
+          )}
+
+          {/* Coding Challenge Fields */}
+          {formData.questionType === 'coding' && (
+            <div className="space-y-3 p-3 bg-slate-50 dark:bg-navy-950 rounded-xl border border-slate-200 dark:border-navy-800">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Language
+                  </label>
+                  <select
+                    value={formData.language || 'javascript'}
+                    onChange={(e) => setFormData({ ...formData, language: e.target.value })}
+                    className="w-full py-1.5 px-3 text-xs rounded-lg border border-slate-200 dark:border-navy-750 bg-white dark:bg-navy-900 text-slate-800 dark:text-slate-200"
+                  >
+                    <option value="javascript">JavaScript (Node.js)</option>
+                    <option value="python">Python 3</option>
+                    <option value="java">Java 17 (OpenJDK)</option>
+                    <option value="cpp">C++23 (GCC)</option>
+                    <option value="c">C (GCC)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Starter Code Template *
+                </label>
+                <textarea
+                  rows={4}
+                  required
+                  value={formData.starterCode || ''}
+                  onChange={(e) => setFormData({ ...formData, starterCode: e.target.value })}
+                  placeholder="// Starter code skeleton..."
+                  className="w-full p-2 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-slate-900 text-emerald-400 focus:outline-none"
+                />
+              </div>
+
+              {/* Test Cases Builder */}
+              <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-navy-800">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Test Cases</span>
+                  <button type="button" onClick={addTestCase} className="text-xs text-electric-600 hover:underline">
+                    + Add Test Case
+                  </button>
+                </div>
+                {(formData.testCases || []).map((tc, tcIdx) => (
+                  <div key={tcIdx} className="p-2 bg-white dark:bg-navy-900 rounded-lg border border-slate-200 dark:border-navy-750 space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-500">Case #{tcIdx + 1}</span>
+                      <div className="flex items-center gap-2">
+                        <label className="flex items-center gap-1 text-[11px] text-slate-600 dark:text-slate-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={!!tc.isHidden}
+                            onChange={(e) => handleTestCaseChange(tcIdx, 'isHidden', e.target.checked)}
+                            className="w-3.5 h-3.5 text-electric-600 rounded"
+                          />
+                          <span>Hidden</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => removeTestCase(tcIdx)}
+                          disabled={(formData.testCases || []).length <= 1}
+                          className="text-slate-400 hover:text-rose-500 disabled:opacity-30"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        value={tc.input || ''}
+                        onChange={(e) => handleTestCaseChange(tcIdx, 'input', e.target.value)}
+                        placeholder="Standard Input"
+                        className="py-1 px-2 text-xs font-mono rounded border border-slate-200 dark:border-navy-750 bg-slate-50 dark:bg-navy-950 text-slate-800 dark:text-slate-200"
+                      />
+                      <input
+                        type="text"
+                        value={tc.expectedOutput || ''}
+                        onChange={(e) => handleTestCaseChange(tcIdx, 'expectedOutput', e.target.value)}
+                        placeholder="Expected Output"
+                        className="py-1 px-2 text-xs font-mono rounded border border-slate-200 dark:border-navy-750 bg-slate-50 dark:bg-navy-950 text-slate-800 dark:text-slate-200"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Debugging Challenge Fields */}
+          {formData.questionType === 'debugging' && (
+            <div className="space-y-3 p-3 bg-slate-50 dark:bg-navy-950 rounded-xl border border-slate-200 dark:border-navy-800">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Language
+                  </label>
+                  <select
+                    value={formData.language || 'javascript'}
+                    onChange={(e) => setFormData({ ...formData, language: e.target.value })}
+                    className="w-full py-1.5 px-3 text-xs rounded-lg border border-slate-200 dark:border-navy-750 bg-white dark:bg-navy-900 text-slate-800 dark:text-slate-200"
+                  >
+                    <option value="javascript">JavaScript (Node.js)</option>
+                    <option value="python">Python 3</option>
+                    <option value="java">Java 17 (OpenJDK)</option>
+                    <option value="cpp">C++23 (GCC)</option>
+                    <option value="c">C (GCC)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Flawed / Buggy Code *
+                </label>
+                <textarea
+                  rows={4}
+                  required
+                  value={formData.buggyCode || ''}
+                  onChange={(e) => setFormData({ ...formData, buggyCode: e.target.value })}
+                  placeholder="// Flawed code containing logic defects..."
+                  className="w-full p-2 text-xs font-mono rounded-lg border border-rose-300 dark:border-rose-900 bg-slate-900 text-rose-300 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Reference Clean Solution (Optional)
+                </label>
+                <textarea
+                  rows={3}
+                  value={formData.correctSolution || ''}
+                  onChange={(e) => setFormData({ ...formData, correctSolution: e.target.value })}
+                  placeholder="// Verified corrected solution..."
+                  className="w-full p-2 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-slate-900 text-emerald-400 focus:outline-none"
+                />
+              </div>
+
+              {/* Test Cases Builder */}
+              <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-navy-800">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Verification Test Cases</span>
+                  <button type="button" onClick={addTestCase} className="text-xs text-electric-600 hover:underline">
+                    + Add Test Case
+                  </button>
+                </div>
+                {(formData.testCases || []).map((tc, tcIdx) => (
+                  <div key={tcIdx} className="p-2 bg-white dark:bg-navy-900 rounded-lg border border-slate-200 dark:border-navy-750 space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-500">Case #{tcIdx + 1}</span>
+                      <div className="flex items-center gap-2">
+                        <label className="flex items-center gap-1 text-[11px] text-slate-600 dark:text-slate-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={!!tc.isHidden}
+                            onChange={(e) => handleTestCaseChange(tcIdx, 'isHidden', e.target.checked)}
+                            className="w-3.5 h-3.5 text-electric-600 rounded"
+                          />
+                          <span>Hidden</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => removeTestCase(tcIdx)}
+                          disabled={(formData.testCases || []).length <= 1}
+                          className="text-slate-400 hover:text-rose-500 disabled:opacity-30"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        value={tc.input || ''}
+                        onChange={(e) => handleTestCaseChange(tcIdx, 'input', e.target.value)}
+                        placeholder="Standard Input"
+                        className="py-1 px-2 text-xs font-mono rounded border border-slate-200 dark:border-navy-750 bg-slate-50 dark:bg-navy-950 text-slate-800 dark:text-slate-200"
+                      />
+                      <input
+                        type="text"
+                        value={tc.expectedOutput || ''}
+                        onChange={(e) => handleTestCaseChange(tcIdx, 'expectedOutput', e.target.value)}
+                        placeholder="Expected Output"
+                        className="py-1 px-2 text-xs font-mono rounded border border-slate-200 dark:border-navy-750 bg-slate-50 dark:bg-navy-950 text-slate-800 dark:text-slate-200"
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}

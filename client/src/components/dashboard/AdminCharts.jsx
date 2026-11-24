@@ -34,12 +34,7 @@ export const AdminPerformanceChart = ({ tests = [], recentResults = [] }) => {
     return acc;
   }, []);
 
-  const chartData = categoryData.length > 0
-    ? categoryData
-    : [
-        { name: 'Technical', count: 1, totalMarks: 4 },
-        { name: 'Aptitude', count: 1, totalMarks: 2 },
-      ];
+  const chartData = categoryData;
 
   // Score distribution from submissions
   const scoreData = (recentResults || []).map((r, i) => ({
