@@ -54,6 +54,19 @@ export const testService = {
   // Get dashboard metrics
   getDashboardStats: async () => {
     return await api.get('/dashboard/stats');
+  },
+
+  // Code Arena & Judge0 Integration
+  runCode: async (payload) => {
+    return await api.post('/code/run', payload);
+  },
+
+  submitCode: async (payload) => {
+    return await api.post('/code/submit', payload);
+  },
+
+  getSubmissionStatus: async (submissionId) => {
+    return await api.get(`/code/status/${submissionId}`);
   }
 };
 

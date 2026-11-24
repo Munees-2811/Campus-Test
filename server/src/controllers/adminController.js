@@ -738,6 +738,10 @@ const getQuestionBank = async (req, res, next) => {
           questionText: q.questionText || '',
           options: q.options || [],
           correctAnswer: q.correctAnswer !== undefined ? q.correctAnswer : 0,
+          correctAnswers: Array.isArray(q.correctAnswers) ? q.correctAnswers : [],
+          correctNumber: q.correctNumber !== undefined ? q.correctNumber : null,
+          tolerance: q.tolerance !== undefined ? q.tolerance : 0,
+          explanation: q.explanation || '',
           marks: q.marks || 1,
           type: q.type || 'multiple_choice'
         });
@@ -787,10 +791,10 @@ const getQuestionBank = async (req, res, next) => {
 
 const addQuestionToBank = async (req, res, next) => {
   try {
-    const { testId, questionText, options, correctAnswer, marks, questionType } = req.body;
+    const { testId, questionText, options, correctAnswer, correctAnswers, correctNumber, tolerance, marks, questionType, explanation } = req.body;
 
-    if (!questionText || !options || options.length < 2) {
-      return res.status(400).json({ success: false, message: 'Question text and at least 2 options are required.' });
+    if (!questionText || !questionText.trim()) {
+      return res.status(400).json({ success: false, message: 'Question text is required.' });
     }
 
     if (testId) {
@@ -805,10 +809,14 @@ const addQuestionToBank = async (req, res, next) => {
 
       const newQ = {
         questionText: questionText.trim(),
-        options: options.map((o) => (typeof o === 'string' ? o.trim() : o)),
-        correctAnswer: parseInt(correctAnswer, 10) || 0,
+        options: Array.isArray(options) ? options.map((o) => (typeof o === 'string' ? o.trim() : o)) : [],
+        correctAnswer: correctAnswer !== undefined ? parseInt(correctAnswer, 10) : 0,
+        correctAnswers: Array.isArray(correctAnswers) ? correctAnswers : [],
+        correctNumber: correctNumber !== undefined && correctNumber !== '' ? Number(correctNumber) : null,
+        tolerance: tolerance !== undefined && tolerance !== '' ? Number(tolerance) : 0,
         marks: parseInt(marks, 10) || 1,
-        type: questionType || 'multiple_choice'
+        type: questionType || 'multiple_choice',
+        explanation: explanation || ''
       };
 
       const currentQuestions = Array.isArray(test.questions) ? test.questions : [];

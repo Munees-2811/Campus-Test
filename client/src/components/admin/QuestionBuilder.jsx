@@ -545,6 +545,7 @@ const QuestionBuilderItem = ({
                   <option value="python">Python 3</option>
                   <option value="java">Java 17</option>
                   <option value="cpp">C++ 20</option>
+                  <option value="c">C (GCC)</option>
                   <option value="sql">PostgreSQL</option>
                 </select>
               </div>

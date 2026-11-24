@@ -56,15 +56,6 @@ const formatStudentTest = (t, assignment = {}, submission = null) => {
       : null
   };
 };
-          totalMarks: submission.total_marks,
-          passed: submission.passed,
-          percentage: Math.round((submission.score / (submission.total_marks || 1)) * 100),
-          timeTakenSeconds: submission.time_taken_seconds,
-          createdAt: submission.created_at
-        }
-      : null
-  };
-};
 
 // =============================================================================
 // 1. DASHBOARD OVERVIEW

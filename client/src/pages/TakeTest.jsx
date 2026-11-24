@@ -7,6 +7,9 @@ import Loader from '../components/common/Loader';
 import Modal from '../components/common/Modal';
 import { useTheme } from '../context/ThemeContext';
 import testService from '../services/testService';
+import CodeEditor from '../components/student/CodeEditor';
+import CodeExecutionPanel from '../components/student/CodeExecutionPanel';
+import CodingArenaView from '../components/student/CodingArenaView';
 import {
   Clock,
   AlertCircle,
@@ -50,6 +53,8 @@ const TakeTest = () => {
   const [multiAnswers, setMultiAnswers] = useState({}); // { [qIdx]: [optIdx1, optIdx2] }
   const [numericalAnswers, setNumericalAnswers] = useState({}); // { [qIdx]: numberString }
   const [codeAnswers, setCodeAnswers] = useState({}); // { [qIdx]: codeString }
+  const [codeExecutionResults, setCodeExecutionResults] = useState({}); // { [qIdx]: judge0ResultObj }
+  const [selectedLanguages, setSelectedLanguages] = useState({}); // { [qIdx]: 'javascript'|'python'|... }
   const [sqlAnswers, setSqlAnswers] = useState({}); // { [qIdx]: sqlQueryString }
   const [markedForReview, setMarkedForReview] = useState(new Set()); // Set of qIdx
   const [timeLeft, setTimeLeft] = useState(0);
@@ -109,7 +114,20 @@ const TakeTest = () => {
               } else if (qType === 'sql' && sa.submitted_code) {
                 initialSql[qIdx] = sa.submitted_code;
               } else if (['coding', 'debugging'].includes(qType) && sa.submitted_code) {
-                initialCode[qIdx] = sa.submitted_code;
+                try {
+                  const parsed = JSON.parse(sa.submitted_code);
+                  if (parsed && (parsed.sourceCode || parsed.code)) {
+                    initialCode[qIdx] = parsed.sourceCode || parsed.code;
+                    setCodeExecutionResults((prev) => ({ ...prev, [qIdx]: parsed }));
+                    if (parsed.language) {
+                      setSelectedLanguages((prev) => ({ ...prev, [qIdx]: parsed.language }));
+                    }
+                  } else {
+                    initialCode[qIdx] = sa.submitted_code;
+                  }
+                } catch {
+                  initialCode[qIdx] = sa.submitted_code;
+                }
               } else if (sa.selected_option !== null && sa.selected_option !== undefined) {
                 initialSingle[qIdx] = sa.selected_option;
               }
@@ -323,7 +341,24 @@ const TakeTest = () => {
           subAnswer = sqlAnswers[idx] || null;
           selOption = selectedAnswers[idx] !== undefined ? selectedAnswers[idx] : null;
         } else if (['coding', 'debugging'].includes(type)) {
-          subAnswer = codeAnswers[idx] || null;
+          const rawCode = codeAnswers[idx] || '';
+          const execRes = codeExecutionResults[idx];
+          if (execRes) {
+            subAnswer = JSON.stringify({
+              sourceCode: rawCode,
+              language: selectedLanguages[idx] || q.language || 'javascript',
+              passedCount: execRes.passedCount,
+              totalCount: execRes.totalCount,
+              score: execRes.score,
+              maxScore: execRes.maxScore,
+              executionTime: execRes.executionTime,
+              memoryUsed: execRes.memoryUsed,
+              status: execRes.status,
+              testResults: execRes.testResults
+            });
+          } else {
+            subAnswer = rawCode;
+          }
           selOption = selectedAnswers[idx] !== undefined ? selectedAnswers[idx] : null;
         } else {
           selOption = selectedAnswers[idx] !== undefined ? selectedAnswers[idx] : null;
@@ -386,10 +421,10 @@ const TakeTest = () => {
       return numericalAnswers[idx] !== undefined && numericalAnswers[idx] !== '' && numericalAnswers[idx] !== null;
     }
     if (type === 'sql') {
-      return sqlAnswers[idx] && sqlAnswers[idx].trim().length > 35;
+      return !!sqlAnswers[idx] && sqlAnswers[idx].trim().length > 10;
     }
     if (['coding', 'debugging'].includes(type)) {
-      return codeAnswers[idx] && codeAnswers[idx].trim().length > 20;
+      return (!!codeAnswers[idx] && codeAnswers[idx].trim().length > 10) || !!codeExecutionResults[idx];
     }
     return selectedAnswers[idx] !== undefined && selectedAnswers[idx] !== null;
   };
@@ -521,6 +556,95 @@ const TakeTest = () => {
 
   const progressPercent = Math.round(((currentQIndex + 1) / totalQ) * 100);
   const isCurrentMarked = markedForReview.has(currentQIndex);
+
+  // If question is a coding or debugging arena problem, render the dedicated Split Coding Arena interface
+  const isCodingProblem = ['coding', 'debugging'].includes(qType) || ['coding', 'debugging'].includes(test?.category?.toLowerCase());
+
+  if (isCodingProblem) {
+    return (
+      <>
+        <CodingArenaView
+          test={test}
+          currentQIndex={currentQIndex}
+          setCurrentQIndex={setCurrentQIndex}
+          codeAnswers={codeAnswers}
+          setCodeAnswers={setCodeAnswers}
+          selectedLanguages={selectedLanguages}
+          setSelectedLanguages={setSelectedLanguages}
+          codeExecutionResults={codeExecutionResults}
+          setCodeExecutionResults={setCodeExecutionResults}
+          markedForReview={markedForReview}
+          toggleMarkForReview={handleToggleMarkForReview}
+          timeLeft={timeLeft}
+          formatTime={formatTime}
+          autoSaveStatus={autoSaveStatus}
+          triggerAutoSave={triggerAutoSave}
+          onSaveAndProceed={() => {
+            if (currentQIndex < totalQ - 1) {
+              setCurrentQIndex((prev) => prev + 1);
+            } else {
+              setIsConfirmModalOpen(true);
+            }
+          }}
+          onSubmitExam={() => setIsConfirmModalOpen(true)}
+          onNavigateHome={() => {
+            if (window.confirm('Return to student dashboard? Your current code and answers are automatically saved.')) {
+              navigate('/student/dashboard');
+            }
+          }}
+        />
+
+        {/* Confirmation Modal */}
+        <Modal
+          isOpen={isConfirmModalOpen}
+          onClose={() => setIsConfirmModalOpen(false)}
+          title="Submit Examination"
+          size="sm"
+        >
+          <div className="space-y-4">
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Are you sure you want to finish and submit your coding assessment?
+            </p>
+            <div className="p-3 bg-slate-50 dark:bg-navy-900 rounded-lg space-y-1.5 text-xs font-mono">
+              <div className="flex justify-between">
+                <span>Total Questions:</span>
+                <span className="font-bold">{totalQ}</span>
+              </div>
+              <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
+                <span>Answered:</span>
+                <span className="font-bold">{totalAnsweredCount}</span>
+              </div>
+              <div className="flex justify-between text-amber-600 dark:text-amber-400">
+                <span>Marked for Review:</span>
+                <span className="font-bold">{markedForReview.size}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Unanswered:</span>
+                <span className="font-bold">{totalQ - totalAnsweredCount}</span>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsConfirmModalOpen(false)}
+              >
+                Continue Test
+              </Button>
+              <Button
+                variant="success"
+                size="sm"
+                isLoading={isSubmitting}
+                onClick={handleSubmitTest}
+              >
+                Confirm & Submit
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      </>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-navy-950 flex flex-col justify-between transition-colors">
@@ -658,53 +782,85 @@ const TakeTest = () => {
 
               {/* 3. CODE EDITOR for Coding & Debugging Arenas */}
               {['coding', 'debugging'].includes(qType) && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Code Editor ({currentQ?.language || 'JavaScript'}):
-                    </span>
-                    <span className="text-[11px] text-slate-400 font-mono">
-                      {qType === 'debugging' ? 'Fix flawed implementation' : 'Complete algorithm solution'}
-                    </span>
-                  </div>
-                  <textarea
-                    rows={8}
-                    value={codeAnswers[currentQIndex] || ''}
-                    onChange={(e) => handleCodeChange(e.target.value)}
-                    className="w-full font-mono text-xs p-4 rounded-xl border border-slate-300 dark:border-navy-700 bg-slate-950 text-blue-300 focus:outline-none focus:ring-2 focus:ring-electric-500"
-                    placeholder="// Write your code solution here..."
-                  />
-
-                  {Array.isArray(currentQ?.testCases) && currentQ.testCases.length > 0 && (
-                    <div className="space-y-2 pt-2">
-                      <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
-                        Sample Test Cases:
-                      </span>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {currentQ.testCases.map((tc, tcIdx) => (
-                          <div key={tcIdx} className="p-2.5 rounded-lg bg-slate-100 dark:bg-navy-900 border border-slate-200 dark:border-navy-800 font-mono text-[11px] space-y-1">
-                            <div><span className="text-slate-400">Input:</span> {tc.input}</div>
-                            <div><span className="text-slate-400">Expected:</span> <span className="text-emerald-600 dark:text-emerald-400 font-bold">{tc.expectedOutput}</span></div>
-                          </div>
-                        ))}
+                <div className="space-y-4">
+                  {/* Flawed Code Banner for Debugging Arena */}
+                  {qType === 'debugging' && currentQ?.buggyCode && (
+                    <div className="space-y-1.5 p-3.5 bg-rose-50/70 dark:bg-rose-950/30 rounded-xl border border-rose-200 dark:border-rose-900/60 text-xs">
+                      <div className="flex items-center gap-1.5 text-rose-700 dark:text-rose-400 font-bold uppercase tracking-wider text-[11px]">
+                        <Bug className="w-3.5 h-3.5" /> Reference Flawed Code (Inspect the defect below):
                       </div>
+                      <pre className="p-2.5 bg-slate-950 rounded-lg text-rose-300 font-mono text-[11px] overflow-x-auto border border-rose-900/40">
+                        {currentQ.buggyCode}
+                      </pre>
                     </div>
                   )}
+
+                  {/* Monaco Code Editor */}
+                  <div className="space-y-2">
+                    <CodeEditor
+                      language={selectedLanguages[currentQIndex] || currentQ?.language || 'javascript'}
+                      value={codeAnswers[currentQIndex] || ''}
+                      onChange={handleCodeChange}
+                      onLanguageChange={(newLang) => {
+                        setSelectedLanguages((prev) => ({ ...prev, [currentQIndex]: newLang }));
+                      }}
+                      starterCode={currentQ?.starterCode || currentQ?.buggyCode || ''}
+                      height="380px"
+                    />
+                  </div>
+
+                  {/* Interactive Execution & Test Cases Panel */}
+                  <CodeExecutionPanel
+                    testId={id}
+                    questionIndex={currentQIndex}
+                    sourceCode={codeAnswers[currentQIndex] || ''}
+                    language={selectedLanguages[currentQIndex] || currentQ?.language || 'javascript'}
+                    testCases={currentQ?.testCases || []}
+                    onSubmissionResult={(execRes) => {
+                      setCodeExecutionResults((prev) => ({
+                        ...prev,
+                        [currentQIndex]: execRes
+                      }));
+                      // Construct and auto-save the evaluated state
+                      const serializedCode = JSON.stringify({
+                        sourceCode: codeAnswers[currentQIndex] || '',
+                        language: selectedLanguages[currentQIndex] || currentQ?.language || 'javascript',
+                        passedCount: execRes.passedCount,
+                        totalCount: execRes.totalCount,
+                        score: execRes.score,
+                        maxScore: execRes.maxScore,
+                        executionTime: execRes.executionTime,
+                        memoryUsed: execRes.memoryUsed,
+                        status: execRes.status,
+                        testResults: execRes.testResults
+                      });
+                      triggerAutoSave({
+                        questionIndex: currentQIndex,
+                        selectedOption: null,
+                        submittedCode: serializedCode
+                      });
+                    }}
+                  />
                 </div>
               )}
 
               {/* 4. SQL QUERY EDITOR for SQL Arena */}
               {qType === 'sql' && (
-                <div className="space-y-2">
-                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Write SQL Query:
-                  </span>
-                  <textarea
-                    rows={4}
-                    value={sqlAnswers[currentQIndex] || ''}
-                    onChange={(e) => handleSqlChange(e.target.value)}
-                    className="w-full font-mono text-xs p-3 rounded-xl border border-slate-300 dark:border-navy-700 bg-slate-950 text-amber-300 focus:outline-none focus:ring-2 focus:ring-electric-500"
-                    placeholder="SELECT ... FROM ... WHERE ...;"
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      SQL Query Editor:
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      PostgreSQL syntax
+                    </span>
+                  </div>
+                  <CodeEditor
+                    language="sql"
+                    value={sqlAnswers[currentQIndex] || '-- Write your SQL query below:\n'}
+                    onChange={handleSqlChange}
+                    starterCode="-- Write your SQL query below:\n"
+                    height="240px"
                   />
                 </div>
               )}

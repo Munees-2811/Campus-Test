@@ -930,6 +930,38 @@ const submitTest = async (req, res, next) => {
         const code = a.submittedCode || a.submittedAnswer || '';
         if (code && code.trim()) {
           isAnswered = true;
+          let parsedJudge0 = null;
+          try {
+            parsedJudge0 = JSON.parse(code);
+          } catch {}
+
+          if (parsedJudge0 && parsedJudge0.testResults && parsedJudge0.totalCount !== undefined) {
+            isCorrect = parsedJudge0.passedCount === parsedJudge0.totalCount;
+            const qMarks = Number(question.marks) || 1;
+            const earned = parsedJudge0.totalCount > 0
+              ? Math.round((parsedJudge0.passedCount / parsedJudge0.totalCount) * qMarks * 100) / 100
+              : 0;
+            marksAwarded = earned;
+            totalScore += earned;
+
+            return {
+              questionIndex: a.questionIndex,
+              originalIndex: qIdx,
+              type,
+              selectedOption: null,
+              selectedOptions: null,
+              submittedAnswer: parsedJudge0.sourceCode || parsedJudge0.code || code,
+              isCorrect,
+              marksAwarded,
+              isAnswered,
+              executionTime: parsedJudge0.executionTime,
+              memoryUsed: parsedJudge0.memoryUsed,
+              passedTestCases: parsedJudge0.passedCount,
+              totalTestCases: parsedJudge0.totalCount,
+              status: parsedJudge0.status
+            };
+          }
+
           if (question.correctSolution && question.correctSolution.trim()) {
             isCorrect = code.trim() === question.correctSolution.trim();
           } else if (a.selectedOption !== undefined && a.selectedOption !== null) {
