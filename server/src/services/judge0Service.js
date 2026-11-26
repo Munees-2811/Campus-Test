@@ -261,9 +261,11 @@ const runAgainstTestCases = async ({ sourceCode, language, testCases = [] }) => 
       expectedOutput: expected
     });
 
+    // Normalized whitespace comparison (handles trailing newlines, CRLF, extra spaces)
+    const normalize = (s) => (s || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n+$/, '').trim();
     const actual = (execRes.stdout || '').trim();
-    const isMatchingOutput = expected ? actual === expected : true;
-    const isExecutionSuccessful = execRes.status?.id === 3 && !execRes.stderr && !execRes.compile_output;
+    const isMatchingOutput = expected ? normalize(execRes.stdout) === normalize(expected) : true;
+    const isExecutionSuccessful = execRes.status?.id === 3 && !execRes.compile_output;
     const passed = isMatchingOutput && isExecutionSuccessful;
 
     if (passed) {
@@ -283,7 +285,7 @@ const runAgainstTestCases = async ({ sourceCode, language, testCases = [] }) => 
       testCaseIndex: i + 1,
       input: tc.isHidden ? '[HIDDEN TEST CASE]' : input,
       expectedOutput: tc.isHidden ? '[HIDDEN]' : expected,
-      actualOutput: tc.isHidden ? (passed ? '[PASSED]' : '[FAILED]') : actual,
+      actualOutput: tc.isHidden ? (passed ? '[PASSED]' : '[FAILED]') : normalize(execRes.stdout),
       passed,
       time: execRes.time,
       memory: execRes.memory,

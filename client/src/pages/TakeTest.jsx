@@ -137,7 +137,12 @@ const TakeTest = () => {
           // Set default templates for unfilled items
           (data.test.questions || []).forEach((q, idx) => {
             if (q.type === 'coding' && q.starterCode && !initialCode[idx]) {
-              initialCode[idx] = q.starterCode;
+              if (typeof q.starterCode === 'object') {
+                const lang = selectedLanguages[idx] || q.language || 'javascript';
+                initialCode[idx] = q.starterCode[lang] || Object.values(q.starterCode)[0] || '';
+              } else {
+                initialCode[idx] = q.starterCode;
+              }
             } else if (q.type === 'debugging' && q.buggyCode && !initialCode[idx]) {
               initialCode[idx] = q.buggyCode;
             } else if (q.type === 'sql' && !initialSql[idx]) {

@@ -113,6 +113,16 @@ const stripAnswers = (questions) =>
     const stripped = {
       originalIndex: q.originalIndex !== undefined ? q.originalIndex : idx,
       type: q.type || 'multiple_choice',
+      title: q.title || '',
+      difficulty: q.difficulty || '',
+      description: q.description || '',
+      inputFormat: q.inputFormat || '',
+      outputFormat: q.outputFormat || '',
+      constraints: q.constraints || '',
+      timeLimit: q.timeLimit || 5,
+      memoryLimit: q.memoryLimit || 256,
+      allowedLanguages: q.allowedLanguages || [],
+      tags: q.tags || [],
       questionText: q.questionText,
       marks: q.marks || 1,
       options: q.options || [],
@@ -124,6 +134,16 @@ const stripAnswers = (questions) =>
       // correctAnswer, correctAnswers, correctNumber, correctSolution, tolerance & explanation stripped
     };
 
+    // Public sample test cases (safe to show student)
+    if (Array.isArray(q.sampleTestCases)) {
+      stripped.sampleTestCases = q.sampleTestCases.map((stc) => ({
+        input: stc.input,
+        expectedOutput: stc.expectedOutput,
+        explanation: stc.explanation || ''
+      }));
+    }
+
+    // Only non-hidden test cases returned in testCases
     if (Array.isArray(q.testCases)) {
       stripped.testCases = q.testCases
         .filter((tc) => !tc.isHidden)
@@ -201,7 +221,10 @@ const validateQuestions = (questions) => {
 
     // Coding challenge
     if (type === 'coding') {
-      if (!q.starterCode || !q.starterCode.trim()) {
+      const hasCode = typeof q.starterCode === 'object' && q.starterCode !== null
+        ? Object.values(q.starterCode).some((v) => typeof v === 'string' && v.trim().length > 0)
+        : (typeof q.starterCode === 'string' && q.starterCode.trim().length > 0);
+      if (!hasCode) {
         return `Question #${num} (Coding): Please provide starter code.`;
       }
     }
@@ -250,28 +273,23 @@ const getTests = async (req, res, next) => {
       return res.json({ success: true, count: tests.length, tests });
     }
 
-    // Student: fetch only assigned tests for this student
-    const { data: assignments, error: assignError } = await supabase
-      .from('assignments')
-      .select('test_id, due_date, status')
-      .eq('student_id', req.user.id);
+    // Student: fetch tests assigned to this student OR open published tests (with no restricted assignments)
+    const [myAssignRes, allAssignRes, testsRes] = await Promise.all([
+      supabase.from('assignments').select('test_id, due_date, status').eq('student_id', req.user.id),
+      supabase.from('assignments').select('test_id'),
+      supabase.from('tests').select('*').eq('is_active', true).order('created_at', { ascending: false })
+    ]);
 
-    if (assignError) return next(new Error(assignError.message));
+    if (myAssignRes.error) return next(new Error(myAssignRes.error.message));
+    if (allAssignRes.error) return next(new Error(allAssignRes.error.message));
+    if (testsRes.error) return next(new Error(testsRes.error.message));
 
-    const assignedTestIds = (assignments || []).map((a) => a.test_id);
+    const myAssignedSet = new Set((myAssignRes.data || []).map((a) => a.test_id));
+    const restrictedSet = new Set((allAssignRes.data || []).map((a) => a.test_id));
 
-    if (assignedTestIds.length === 0) {
-      return res.json({ success: true, count: 0, tests: [] });
-    }
-
-    const { data: testsData, error: testsError } = await supabase
-      .from('tests')
-      .select('*')
-      .in('id', assignedTestIds)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false });
-
-    if (testsError) return next(new Error(testsError.message));
+    const testsData = (testsRes.data || []).filter(
+      (t) => myAssignedSet.has(t.id) || !restrictedSet.has(t.id)
+    );
 
     // Fetch student's submissions
     const { data: submissionsData } = await supabase
@@ -454,7 +472,7 @@ const startAttempt = async (req, res, next) => {
     const studentId = req.user.id;
     const testId = req.params.id;
 
-    // Verify assignment
+    // Verify assignment (or allow open published test with no restricted assignments)
     const { data: assignment } = await supabase
       .from('assignments')
       .select('id')
@@ -463,7 +481,22 @@ const startAttempt = async (req, res, next) => {
       .maybeSingle();
 
     if (!assignment) {
-      return res.status(403).json({ success: false, message: 'Not assigned to this assessment.' });
+      const { count: anyAssignCount } = await supabase
+        .from('assignments')
+        .select('id', { count: 'exact', head: true })
+        .eq('test_id', testId);
+
+      if ((anyAssignCount || 0) > 0) {
+        return res.status(403).json({ success: false, message: 'Not assigned to this assessment.' });
+      }
+
+      // Auto-create assignment row for open published test
+      await supabase
+        .from('assignments')
+        .upsert(
+          { test_id: testId, student_id: studentId, status: 'in_progress' },
+          { onConflict: 'test_id,student_id' }
+        );
     }
 
     // Check for active in_progress attempt

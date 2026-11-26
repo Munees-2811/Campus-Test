@@ -17,11 +17,7 @@ import {
   Users
 } from 'lucide-react';
 
-const SAMPLE_CSV = `name,email,rollNumber,department,password
-David Miller,david.m@campus.edu,CS-2026-101,Computer Science,Password123!
-Emma Watson,emma.w@campus.edu,CS-2026-102,Information Technology,Password123!
-Sophia Taylor,sophia.t@campus.edu,EE-2026-201,Electrical Engineering,
-Liam Anderson,liam.a@campus.edu,ME-2026-301,Mechanical Engineering,`;
+const SAMPLE_CSV = `name,email,rollNumber,department,password`;
 
 const BulkStudentImportView = ({ onBackToDirectory }) => {
   const [file, setFile] = useState(null);

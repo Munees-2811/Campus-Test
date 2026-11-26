@@ -92,14 +92,31 @@ export const createDefaultQuestion = (type = 'multiple_choice') => {
     case 'coding':
       return {
         type: 'coding',
+        title: '',
+        difficulty: 'Medium',
         questionText: '',
+        description: '',
+        inputFormat: '',
+        outputFormat: '',
+        constraints: '',
         marks: 10,
+        timeLimit: 5,
+        memoryLimit: 256,
         language: 'javascript',
-        starterCode: '',
+        allowedLanguages: ['javascript', 'python', 'java', 'cpp', 'c'],
+        starterCode: {
+          javascript: '// JavaScript Solution\nconst lines = require("fs").readFileSync(0, "utf-8").trim().split("\\n");\n\n// Write your solution here\n',
+          python: '# Python 3 Solution\nimport sys\ninput = sys.stdin.readline\n\n# Write your solution here\n',
+          java: '// Java Solution\nimport java.util.*;\n\npublic class Solution {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        // Write your solution here\n    }\n}\n',
+          cpp: '// C++ Solution\n#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    ios_base::sync_with_stdio(false);\n    cin.tie(NULL);\n    // Write your solution here\n    return 0;\n}\n',
+          c: '// C Solution\n#include <stdio.h>\n\nint main() {\n    // Write your solution here\n    return 0;\n}\n'
+        },
         correctSolution: '',
+        sampleTestCases: [
+          { input: '', expectedOutput: '', explanation: '' }
+        ],
         testCases: [
-          { input: '', expectedOutput: '', isHidden: false },
-          { input: '', expectedOutput: '', isHidden: true }
+          { input: '', expectedOutput: '', isHidden: true, marks: 5 }
         ],
         explanation: ''
       };
@@ -107,14 +124,25 @@ export const createDefaultQuestion = (type = 'multiple_choice') => {
     case 'debugging':
       return {
         type: 'debugging',
+        title: '',
+        difficulty: 'Medium',
         questionText: '',
+        description: '',
+        inputFormat: '',
+        outputFormat: '',
+        constraints: '',
         marks: 5,
+        timeLimit: 5,
+        memoryLimit: 256,
         language: 'javascript',
+        allowedLanguages: ['javascript'],
         buggyCode: '',
         correctSolution: '',
+        sampleTestCases: [
+          { input: '', expectedOutput: '', explanation: '' }
+        ],
         testCases: [
-          { input: '', expectedOutput: '', isHidden: false },
-          { input: '', expectedOutput: '', isHidden: true }
+          { input: '', expectedOutput: '', isHidden: true, marks: 5 }
         ],
         explanation: ''
       };
@@ -240,7 +268,33 @@ const QuestionBuilderItem = ({
     onChange({ ...question, testCases: newTCs });
   };
 
+  // Sample test case handlers
+  const handleSampleTCChange = (tcIdx, field, val) => {
+    const newTCs = [...(question.sampleTestCases || [])];
+    newTCs[tcIdx] = { ...newTCs[tcIdx], [field]: val };
+    onChange({ ...question, sampleTestCases: newTCs });
+  };
+
+  const addSampleTC = () => {
+    const newTCs = [...(question.sampleTestCases || []), { input: '', expectedOutput: '', explanation: '' }];
+    onChange({ ...question, sampleTestCases: newTCs });
+  };
+
+  const removeSampleTC = (tcIdx) => {
+    const newTCs = (question.sampleTestCases || []).filter((_, idx) => idx !== tcIdx);
+    onChange({ ...question, sampleTestCases: newTCs });
+  };
+
+  // Per-language starter code handler
+  const handleStarterCodeChange = (lang, code) => {
+    const current = typeof question.starterCode === 'object' && question.starterCode !== null
+      ? question.starterCode
+      : {};
+    onChange({ ...question, starterCode: { ...current, [lang]: code } });
+  };
+
   const qType = question.type || 'multiple_choice';
+  const [starterLangTab, setStarterLangTab] = React.useState('javascript');
 
   return (
     <Card className="border-slate-200 dark:border-navy-800 shadow-xs hover:border-slate-300 dark:hover:border-navy-700 transition-colors">
@@ -523,48 +577,220 @@ const QuestionBuilderItem = ({
         {/* 5. Coding Arena */}
         {qType === 'coding' && (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Meta Row: Title, Difficulty, Limits */}
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Problem Title
+                </label>
+                <input
+                  type="text"
+                  value={question.title || ''}
+                  onChange={(e) => updateField('title', e.target.value)}
+                  placeholder="e.g. Two Sum / Longest Palindromic Substring"
+                  className="w-full py-1.5 px-3 text-xs rounded-lg border border-slate-200 dark:border-navy-750 bg-white dark:bg-navy-900 text-slate-900 dark:text-slate-100 font-medium"
+                />
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Programming Language
+                  Difficulty
                 </label>
                 <select
-                  value={question.language || 'javascript'}
-                  onChange={(e) => updateField('language', e.target.value)}
-                  className="w-full py-1.5 px-3 text-xs rounded-lg border border-slate-200 dark:border-navy-750 bg-white dark:bg-navy-950 text-slate-800 dark:text-slate-200"
+                  value={question.difficulty || 'Medium'}
+                  onChange={(e) => updateField('difficulty', e.target.value)}
+                  className="w-full py-1.5 px-3 text-xs rounded-lg border border-slate-200 dark:border-navy-750 bg-white dark:bg-navy-900 text-slate-800 dark:text-slate-200 font-semibold"
                 >
-                  <option value="javascript">JavaScript (Node.js)</option>
-                  <option value="python">Python 3</option>
-                  <option value="java">Java 17</option>
-                  <option value="cpp">C++ 20</option>
-                  <option value="c">C (GCC)</option>
-                  <option value="sql">PostgreSQL</option>
+                  <option value="Easy">Easy</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Hard">Hard</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Time / Mem Limits
+                </label>
+                <div className="flex gap-1.5">
+                  <input
+                    type="number"
+                    min="1"
+                    max="15"
+                    value={question.timeLimit || 5}
+                    onChange={(e) => updateField('timeLimit', parseInt(e.target.value) || 5)}
+                    title="Time Limit (sec)"
+                    placeholder="5s"
+                    className="w-1/2 py-1.5 px-2 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-white dark:bg-navy-900 text-slate-800 dark:text-slate-200 text-center"
+                  />
+                  <input
+                    type="number"
+                    min="64"
+                    max="1024"
+                    step="64"
+                    value={question.memoryLimit || 256}
+                    onChange={(e) => updateField('memoryLimit', parseInt(e.target.value) || 256)}
+                    title="Memory Limit (MB)"
+                    placeholder="256MB"
+                    className="w-1/2 py-1.5 px-2 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-white dark:bg-navy-900 text-slate-800 dark:text-slate-200 text-center"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Starter / Boilerplate Code (Shown to student in editor)
-              </label>
+            {/* Input & Output Format & Constraints */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Input Format
+                </label>
+                <textarea
+                  rows={2}
+                  value={question.inputFormat || ''}
+                  onChange={(e) => updateField('inputFormat', e.target.value)}
+                  placeholder="e.g. First line contains integer N, followed by..."
+                  className="w-full p-2 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-slate-50 dark:bg-navy-950 text-slate-800 dark:text-slate-200"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Output Format
+                </label>
+                <textarea
+                  rows={2}
+                  value={question.outputFormat || ''}
+                  onChange={(e) => updateField('outputFormat', e.target.value)}
+                  placeholder="e.g. Print a single integer representing..."
+                  className="w-full p-2 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-slate-50 dark:bg-navy-950 text-slate-800 dark:text-slate-200"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Constraints
+                </label>
+                <textarea
+                  rows={2}
+                  value={question.constraints || ''}
+                  onChange={(e) => updateField('constraints', e.target.value)}
+                  placeholder="e.g. 1 <= N <= 10^5, -10^9 <= A[i] <= 10^9"
+                  className="w-full p-2 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-slate-50 dark:bg-navy-950 text-slate-800 dark:text-slate-200"
+                />
+              </div>
+            </div>
+
+            {/* Starter Code Editor with Tabs */}
+            <div className="space-y-1.5 p-3 rounded-xl border border-slate-200 dark:border-navy-800 bg-slate-50/50 dark:bg-navy-950">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Starter / Boilerplate Code by Language
+                </label>
+                <div className="flex items-center gap-1">
+                  {['javascript', 'python', 'java', 'cpp', 'c'].map((langKey) => (
+                    <button
+                      key={langKey}
+                      type="button"
+                      onClick={() => setStarterLangTab(langKey)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold transition-colors ${
+                        starterLangTab === langKey
+                          ? 'bg-electric-600 text-white'
+                          : 'bg-white dark:bg-navy-850 text-slate-600 dark:text-slate-400 hover:text-slate-900 border border-slate-200 dark:border-navy-750'
+                      }`}
+                    >
+                      {langKey === 'cpp' ? 'C++' : langKey.charAt(0).toUpperCase() + langKey.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <textarea
-                rows={4}
-                required
-                value={question.starterCode || ''}
-                onChange={(e) => updateField('starterCode', e.target.value)}
-                placeholder="function solution(nums) { ... }"
-                className="w-full font-mono text-xs p-3 rounded-lg border border-slate-200 dark:border-navy-750 bg-slate-900 text-blue-300 focus:outline-none"
+                rows={5}
+                value={
+                  typeof question.starterCode === 'object' && question.starterCode !== null
+                    ? (question.starterCode[starterLangTab] || '')
+                    : (question.starterCode || '')
+                }
+                onChange={(e) => handleStarterCodeChange(starterLangTab, e.target.value)}
+                placeholder={`Starter template for ${starterLangTab}...`}
+                className="w-full font-mono text-xs p-3 rounded-lg border border-slate-200 dark:border-navy-750 bg-slate-900 text-emerald-400 focus:outline-none"
               />
             </div>
 
-            {/* Test Cases */}
+            {/* Sample Test Cases (Public / Displayed to Student) */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Verification Test Cases
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                  <span>Sample Test Cases (Shown in problem description & Run Code)</span>
+                </label>
+                <Button variant="ghost" size="xs" onClick={addSampleTC} className="text-xs text-electric-600">
+                  <Plus className="w-3 h-3 mr-1" /> Add Sample
+                </Button>
+              </div>
+
+              {(question.sampleTestCases || []).map((stc, stcIdx) => (
+                <div
+                  key={stcIdx}
+                  className="p-3 bg-white dark:bg-navy-900 rounded-xl border border-slate-200 dark:border-navy-750 space-y-2 shadow-xs"
+                >
+                  <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500">
+                    <span className="text-emerald-600 dark:text-emerald-400 font-bold">Sample #{stcIdx + 1}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeSampleTC(stcIdx)}
+                      disabled={(question.sampleTestCases || []).length <= 1}
+                      className="text-slate-400 hover:text-rose-500 disabled:opacity-30"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase font-mono">Sample Input:</span>
+                      <textarea
+                        rows={2}
+                        value={stc.input || ''}
+                        onChange={(e) => handleSampleTCChange(stcIdx, 'input', e.target.value)}
+                        placeholder="e.g. 5&#10;1 2 3 4 5"
+                        className="w-full p-2 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-slate-50 dark:bg-navy-950 text-slate-800 dark:text-slate-200"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase font-mono">Expected Output:</span>
+                      <textarea
+                        rows={2}
+                        value={stc.expectedOutput || ''}
+                        onChange={(e) => handleSampleTCChange(stcIdx, 'expectedOutput', e.target.value)}
+                        placeholder="e.g. 15"
+                        className="w-full p-2 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-slate-50 dark:bg-navy-950 text-slate-800 dark:text-slate-200"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-mono">Explanation (Optional):</span>
+                    <input
+                      type="text"
+                      value={stc.explanation || ''}
+                      onChange={(e) => handleSampleTCChange(stcIdx, 'explanation', e.target.value)}
+                      placeholder="e.g. Sum of first 5 natural numbers is 15"
+                      className="w-full py-1 px-2 text-xs rounded-lg border border-slate-200 dark:border-navy-750 bg-slate-50 dark:bg-navy-950 text-slate-700 dark:text-slate-300"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Hidden / Evaluation Test Cases */}
+            <div className="space-y-2 pt-2 border-t border-slate-200/80 dark:border-navy-800">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" />
+                  <span>Hidden Test Cases (Executed during Submit Code for final evaluation)</span>
                 </label>
                 <Button variant="ghost" size="xs" onClick={addTestCase} className="text-xs text-electric-600">
-                  <Plus className="w-3 h-3 mr-1" /> Add Test Case
+                  <Plus className="w-3 h-3 mr-1" /> Add Hidden Test Case
                 </Button>
               </div>
 
@@ -579,11 +805,11 @@ const QuestionBuilderItem = ({
                       <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={!!tc.isHidden}
+                          checked={tc.isHidden !== false}
                           onChange={(e) => handleTestCaseChange(tcIdx, 'isHidden', e.target.checked)}
                           className="w-3.5 h-3.5 text-electric-600 rounded"
                         />
-                        <span>Hidden Test Case</span>
+                        <span>Hidden</span>
                       </label>
                       <button
                         type="button"
@@ -598,23 +824,23 @@ const QuestionBuilderItem = ({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div>
-                      <span className="text-[10px] text-slate-400 uppercase font-mono">Standard Input:</span>
-                      <input
-                        type="text"
+                      <span className="text-[10px] text-slate-400 uppercase font-mono">Input:</span>
+                      <textarea
+                        rows={2}
                         value={tc.input || ''}
                         onChange={(e) => handleTestCaseChange(tcIdx, 'input', e.target.value)}
-                        placeholder="[2, 7, 11, 15], 9"
-                        className="w-full py-1 px-2.5 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-white dark:bg-navy-900 text-slate-800 dark:text-slate-200"
+                        placeholder="Standard input..."
+                        className="w-full p-2 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-white dark:bg-navy-900 text-slate-800 dark:text-slate-200"
                       />
                     </div>
                     <div>
                       <span className="text-[10px] text-slate-400 uppercase font-mono">Expected Output:</span>
-                      <input
-                        type="text"
+                      <textarea
+                        rows={2}
                         value={tc.expectedOutput || ''}
                         onChange={(e) => handleTestCaseChange(tcIdx, 'expectedOutput', e.target.value)}
-                        placeholder="[0, 1]"
-                        className="w-full py-1 px-2.5 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-white dark:bg-navy-900 text-slate-800 dark:text-slate-200"
+                        placeholder="Expected output..."
+                        className="w-full p-2 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-white dark:bg-navy-900 text-slate-800 dark:text-slate-200"
                       />
                     </div>
                   </div>
@@ -627,15 +853,44 @@ const QuestionBuilderItem = ({
         {/* 6. Debugging Arena */}
         {qType === 'debugging' && (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Meta Row: Title, Difficulty, Limits */}
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Debugging Problem Title
+                </label>
+                <input
+                  type="text"
+                  value={question.title || ''}
+                  onChange={(e) => updateField('title', e.target.value)}
+                  placeholder="e.g. Fix Off-By-One In Binary Search"
+                  className="w-full py-1.5 px-3 text-xs rounded-lg border border-slate-200 dark:border-navy-750 bg-white dark:bg-navy-900 text-slate-900 dark:text-slate-100 font-medium"
+                />
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Target Programming Language
+                  Difficulty
+                </label>
+                <select
+                  value={question.difficulty || 'Medium'}
+                  onChange={(e) => updateField('difficulty', e.target.value)}
+                  className="w-full py-1.5 px-3 text-xs rounded-lg border border-slate-200 dark:border-navy-750 bg-white dark:bg-navy-900 text-slate-800 dark:text-slate-200 font-semibold"
+                >
+                  <option value="Easy">Easy</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Hard">Hard</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Target Language
                 </label>
                 <select
                   value={question.language || 'javascript'}
                   onChange={(e) => updateField('language', e.target.value)}
-                  className="w-full py-1.5 px-3 text-xs rounded-lg border border-slate-200 dark:border-navy-750 bg-white dark:bg-navy-900 text-slate-800 dark:text-slate-200"
+                  className="w-full py-1.5 px-3 text-xs rounded-lg border border-slate-200 dark:border-navy-750 bg-white dark:bg-navy-900 text-slate-800 dark:text-slate-200 font-mono"
                 >
                   <option value="javascript">JavaScript (Node.js)</option>
                   <option value="python">Python 3</option>
@@ -646,41 +901,128 @@ const QuestionBuilderItem = ({
               </div>
             </div>
 
+            {/* Input & Output Format */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Input Format
+                </label>
+                <textarea
+                  rows={2}
+                  value={question.inputFormat || ''}
+                  onChange={(e) => updateField('inputFormat', e.target.value)}
+                  placeholder="e.g. Standard input format..."
+                  className="w-full p-2 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-slate-50 dark:bg-navy-950 text-slate-800 dark:text-slate-200"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Output Format & Constraints
+                </label>
+                <textarea
+                  rows={2}
+                  value={question.outputFormat || ''}
+                  onChange={(e) => updateField('outputFormat', e.target.value)}
+                  placeholder="e.g. Expected output format..."
+                  className="w-full p-2 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-slate-50 dark:bg-navy-950 text-slate-800 dark:text-slate-200"
+                />
+              </div>
+            </div>
+
+            {/* Defective Code */}
             <div className="space-y-1">
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Flawed / Buggy Code (Loaded in student arena to fix) *
+              <label className="block text-xs font-semibold text-rose-600 dark:text-rose-400">
+                Flawed / Defective Code (Loaded into student editor for fixing) *
               </label>
               <textarea
-                rows={4}
+                rows={5}
                 required
                 value={question.buggyCode || ''}
                 onChange={(e) => updateField('buggyCode', e.target.value)}
-                placeholder="// Flawed code containing logic defects..."
+                placeholder="// Paste defective code here with intentional bug..."
                 className="w-full font-mono text-xs p-3 rounded-lg border border-rose-300 dark:border-rose-900 bg-slate-900 text-rose-300 focus:outline-none"
               />
             </div>
 
+            {/* Correct Solution Reference */}
             <div className="space-y-1">
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Reference Clean Solution (Optional correction benchmark)
+                Reference Clean Solution (Admin only - hidden from students)
               </label>
               <textarea
-                rows={3}
+                rows={4}
                 value={question.correctSolution || ''}
                 onChange={(e) => updateField('correctSolution', e.target.value)}
-                placeholder="// Verified corrected solution..."
+                placeholder="// Verified corrected solution for admin review..."
                 className="w-full font-mono text-xs p-3 rounded-lg border border-slate-200 dark:border-navy-750 bg-slate-900 text-emerald-400 focus:outline-none"
               />
             </div>
 
-            {/* Test Cases Builder for Debugging */}
-            <div className="space-y-3 pt-2 border-t border-slate-200/80 dark:border-navy-800">
+            {/* Sample Test Cases */}
+            <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Verification Test Cases (Run against student's corrected code)
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                  <span>Sample Test Cases (Visible to student)</span>
+                </label>
+                <Button variant="ghost" size="xs" onClick={addSampleTC} className="text-xs text-electric-600">
+                  <Plus className="w-3 h-3 mr-1" /> Add Sample
+                </Button>
+              </div>
+
+              {(question.sampleTestCases || []).map((stc, stcIdx) => (
+                <div
+                  key={stcIdx}
+                  className="p-3 bg-white dark:bg-navy-900 rounded-xl border border-slate-200 dark:border-navy-750 space-y-2 shadow-xs"
+                >
+                  <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500">
+                    <span className="text-emerald-600 dark:text-emerald-400 font-bold">Sample #{stcIdx + 1}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeSampleTC(stcIdx)}
+                      disabled={(question.sampleTestCases || []).length <= 1}
+                      className="text-slate-400 hover:text-rose-500 disabled:opacity-30"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase font-mono">Sample Input:</span>
+                      <textarea
+                        rows={2}
+                        value={stc.input || ''}
+                        onChange={(e) => handleSampleTCChange(stcIdx, 'input', e.target.value)}
+                        placeholder="e.g. 10 5"
+                        className="w-full p-2 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-slate-50 dark:bg-navy-950 text-slate-800 dark:text-slate-200"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase font-mono">Expected Output:</span>
+                      <textarea
+                        rows={2}
+                        value={stc.expectedOutput || ''}
+                        onChange={(e) => handleSampleTCChange(stcIdx, 'expectedOutput', e.target.value)}
+                        placeholder="e.g. 15"
+                        className="w-full p-2 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-slate-50 dark:bg-navy-950 text-slate-800 dark:text-slate-200"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Hidden Verification Test Cases */}
+            <div className="space-y-2 pt-2 border-t border-slate-200/80 dark:border-navy-800">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" />
+                  <span>Hidden Test Cases (Grading evaluation)</span>
                 </label>
                 <Button variant="ghost" size="xs" onClick={addTestCase} className="text-xs text-electric-600">
-                  <Plus className="w-3 h-3 mr-1" /> Add Test Case
+                  <Plus className="w-3 h-3 mr-1" /> Add Hidden Test Case
                 </Button>
               </div>
 
@@ -695,11 +1037,11 @@ const QuestionBuilderItem = ({
                       <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={!!tc.isHidden}
+                          checked={tc.isHidden !== false}
                           onChange={(e) => handleTestCaseChange(tcIdx, 'isHidden', e.target.checked)}
                           className="w-3.5 h-3.5 text-electric-600 rounded"
                         />
-                        <span>Hidden Test Case</span>
+                        <span>Hidden</span>
                       </label>
                       <button
                         type="button"
@@ -715,22 +1057,22 @@ const QuestionBuilderItem = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div>
                       <span className="text-[10px] text-slate-400 uppercase font-mono">Standard Input:</span>
-                      <input
-                        type="text"
+                      <textarea
+                        rows={2}
                         value={tc.input || ''}
                         onChange={(e) => handleTestCaseChange(tcIdx, 'input', e.target.value)}
                         placeholder="e.g. 5, 10"
-                        className="w-full py-1 px-2.5 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-white dark:bg-navy-900 text-slate-800 dark:text-slate-200"
+                        className="w-full p-2 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-white dark:bg-navy-900 text-slate-800 dark:text-slate-200"
                       />
                     </div>
                     <div>
                       <span className="text-[10px] text-slate-400 uppercase font-mono">Expected Output:</span>
-                      <input
-                        type="text"
+                      <textarea
+                        rows={2}
                         value={tc.expectedOutput || ''}
                         onChange={(e) => handleTestCaseChange(tcIdx, 'expectedOutput', e.target.value)}
                         placeholder="e.g. 15"
-                        className="w-full py-1 px-2.5 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-white dark:bg-navy-900 text-slate-800 dark:text-slate-200"
+                        className="w-full p-2 text-xs font-mono rounded-lg border border-slate-200 dark:border-navy-750 bg-white dark:bg-navy-900 text-slate-800 dark:text-slate-200"
                       />
                     </div>
                   </div>

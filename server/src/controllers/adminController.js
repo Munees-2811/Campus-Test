@@ -617,7 +617,32 @@ const bulkImportStudents = async (req, res, next) => {
 const updateQuestionInBank = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { questionText, options, correctAnswer, correctAnswers, correctNumber, tolerance, marks, questionType, explanation } = req.body;
+    const {
+      questionText,
+      options,
+      correctAnswer,
+      correctAnswers,
+      correctNumber,
+      tolerance,
+      marks,
+      questionType,
+      explanation,
+      title,
+      difficulty,
+      description,
+      inputFormat,
+      outputFormat,
+      constraints,
+      timeLimit,
+      memoryLimit,
+      language,
+      allowedLanguages,
+      starterCode,
+      buggyCode,
+      correctSolution,
+      sampleTestCases,
+      testCases
+    } = req.body;
 
     if (!questionText || !questionText.trim()) {
       return res.status(400).json({ success: false, message: 'Question text is required.' });
@@ -647,7 +672,22 @@ const updateQuestionInBank = async (req, res, next) => {
           tolerance: tolerance !== undefined ? Number(tolerance) : qList[qIndex].tolerance,
           marks: marks !== undefined ? Math.max(1, Number(marks)) : (qList[qIndex].marks || 1),
           type: questionType || qList[qIndex].type || 'multiple_choice',
-          explanation: explanation !== undefined ? explanation : (qList[qIndex].explanation || '')
+          explanation: explanation !== undefined ? explanation : (qList[qIndex].explanation || ''),
+          ...(title !== undefined && { title }),
+          ...(difficulty !== undefined && { difficulty }),
+          ...(description !== undefined && { description }),
+          ...(inputFormat !== undefined && { inputFormat }),
+          ...(outputFormat !== undefined && { outputFormat }),
+          ...(constraints !== undefined && { constraints }),
+          ...(timeLimit !== undefined && { timeLimit: Number(timeLimit) || 5 }),
+          ...(memoryLimit !== undefined && { memoryLimit: Number(memoryLimit) || 256 }),
+          ...(language !== undefined && { language }),
+          ...(allowedLanguages !== undefined && { allowedLanguages }),
+          ...(starterCode !== undefined && { starterCode }),
+          ...(buggyCode !== undefined && { buggyCode }),
+          ...(correctSolution !== undefined && { correctSolution }),
+          ...(sampleTestCases !== undefined && { sampleTestCases }),
+          ...(testCases !== undefined && { testCases })
         };
 
         const newTotal = qList.reduce((sum, q) => sum + (Number(q.marks) || 1), 0);
@@ -743,7 +783,15 @@ const getQuestionBank = async (req, res, next) => {
           tolerance: q.tolerance !== undefined ? q.tolerance : 0,
           explanation: q.explanation || '',
           marks: q.marks || 1,
-          type: q.type || 'multiple_choice'
+          type: q.type || 'multiple_choice',
+          title: q.title || '',
+          difficulty: q.difficulty || 'Medium',
+          language: q.language || 'javascript',
+          starterCode: q.starterCode || '',
+          buggyCode: q.buggyCode || '',
+          correctSolution: q.correctSolution || '',
+          testCases: Array.isArray(q.testCases) ? q.testCases : [],
+          sampleTestCases: Array.isArray(q.sampleTestCases) ? q.sampleTestCases : []
         });
       });
     });
@@ -791,7 +839,33 @@ const getQuestionBank = async (req, res, next) => {
 
 const addQuestionToBank = async (req, res, next) => {
   try {
-    const { testId, questionText, options, correctAnswer, correctAnswers, correctNumber, tolerance, marks, questionType, explanation } = req.body;
+    const {
+      testId,
+      questionText,
+      options,
+      correctAnswer,
+      correctAnswers,
+      correctNumber,
+      tolerance,
+      marks,
+      questionType,
+      explanation,
+      title,
+      difficulty,
+      description,
+      inputFormat,
+      outputFormat,
+      constraints,
+      timeLimit,
+      memoryLimit,
+      language,
+      allowedLanguages,
+      starterCode,
+      buggyCode,
+      correctSolution,
+      sampleTestCases,
+      testCases
+    } = req.body;
 
     if (!questionText || !questionText.trim()) {
       return res.status(400).json({ success: false, message: 'Question text is required.' });
@@ -816,7 +890,22 @@ const addQuestionToBank = async (req, res, next) => {
         tolerance: tolerance !== undefined && tolerance !== '' ? Number(tolerance) : 0,
         marks: parseInt(marks, 10) || 1,
         type: questionType || 'multiple_choice',
-        explanation: explanation || ''
+        explanation: explanation || '',
+        ...(title && { title }),
+        ...(difficulty && { difficulty }),
+        ...(description && { description }),
+        ...(inputFormat && { inputFormat }),
+        ...(outputFormat && { outputFormat }),
+        ...(constraints && { constraints }),
+        ...(timeLimit && { timeLimit: Number(timeLimit) || 5 }),
+        ...(memoryLimit && { memoryLimit: Number(memoryLimit) || 256 }),
+        ...(language && { language }),
+        ...(allowedLanguages && { allowedLanguages }),
+        ...(starterCode !== undefined && starterCode !== '' && { starterCode }),
+        ...(buggyCode !== undefined && buggyCode !== '' && { buggyCode }),
+        ...(correctSolution !== undefined && correctSolution !== '' && { correctSolution }),
+        ...(Array.isArray(sampleTestCases) && { sampleTestCases }),
+        ...(Array.isArray(testCases) && { testCases })
       };
 
       const currentQuestions = Array.isArray(test.questions) ? test.questions : [];

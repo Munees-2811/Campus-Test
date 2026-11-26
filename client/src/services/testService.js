@@ -61,6 +61,10 @@ export const testService = {
     return await api.post('/code/run', payload);
   },
 
+  runSamples: async (payload) => {
+    return await api.post('/code/run-samples', payload);
+  },
+
   submitCode: async (payload) => {
     return await api.post('/code/submit', payload);
   },

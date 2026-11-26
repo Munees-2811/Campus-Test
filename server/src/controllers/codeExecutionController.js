@@ -39,7 +39,84 @@ const runCode = async (req, res, next) => {
 };
 
 /**
- * 2. SUBMIT CODE AGAINST PUBLIC & HIDDEN TEST CASES
+ * 2. RUN CODE AGAINST SAMPLE TEST CASES ONLY (no score saved)
+ * POST /api/code/run-samples
+ */
+const runSamples = async (req, res, next) => {
+  try {
+    const { testId, questionIndex, sourceCode, language } = req.body;
+
+    if (!testId || questionIndex === undefined || !sourceCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'testId, questionIndex, and sourceCode are required.'
+      });
+    }
+
+    const { data: test, error: testErr } = await supabase
+      .from('tests')
+      .select('id, questions')
+      .eq('id', testId)
+      .single();
+
+    if (testErr || !test) {
+      return res.status(404).json({ success: false, message: 'Assessment not found.' });
+    }
+
+    const questions = Array.isArray(test.questions) ? test.questions : [];
+    const qIndex = parseInt(questionIndex, 10);
+    const question = questions[qIndex];
+
+    if (!question) {
+      return res.status(404).json({ success: false, message: 'Question not found.' });
+    }
+
+    // Only sample (non-hidden) test cases for Run Code
+    const allTestCases = Array.isArray(question.testCases) ? question.testCases : [];
+    const sampleTestCases = Array.isArray(question.sampleTestCases)
+      ? question.sampleTestCases.map((tc) => ({ ...tc, isHidden: false }))
+      : allTestCases.filter((tc) => !tc.isHidden);
+
+    if (sampleTestCases.length === 0) {
+      return res.status(200).json({
+        success: true,
+        result: {
+          passed: false,
+          passedCount: 0,
+          totalCount: 0,
+          executionTime: '0.000',
+          memoryUsed: 0,
+          status: 'No sample test cases',
+          testResults: []
+        }
+      });
+    }
+
+    const evalResult = await judge0Service.runAgainstTestCases({
+      sourceCode,
+      language: language || question.language || 'javascript',
+      testCases: sampleTestCases
+    });
+
+    return res.status(200).json({
+      success: true,
+      result: {
+        passed: evalResult.passed,
+        passedCount: evalResult.passedCount,
+        totalCount: evalResult.totalCount,
+        executionTime: evalResult.executionTime,
+        memoryUsed: evalResult.memoryUsed,
+        status: evalResult.status,
+        testResults: evalResult.results
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * 3. SUBMIT CODE AGAINST PUBLIC & HIDDEN TEST CASES
  * POST /api/code/submit
  */
 const submitCode = async (req, res, next) => {
@@ -217,6 +294,7 @@ const getSubmissionStatus = async (req, res, next) => {
 
 module.exports = {
   runCode,
+  runSamples,
   submitCode,
   getSubmissionStatus
 };

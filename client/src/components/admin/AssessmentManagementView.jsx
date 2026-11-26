@@ -550,7 +550,31 @@ const AssessmentManagementView = () => {
                   </label>
                   <select
                     value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    onChange={(e) => {
+                      const newCat = e.target.value;
+                      const catToQType = {
+                        Coding: 'coding',
+                        Debugging: 'debugging',
+                        SQL: 'sql',
+                        Technical: 'multiple_choice',
+                        Aptitude: 'quantitative_aptitude'
+                      };
+                      // If creating a new test with a single untouched blank question, auto-switch its type to match category
+                      if (
+                        !editingTestId &&
+                        formData.questions.length === 1 &&
+                        !formData.questions[0].questionText?.trim()
+                      ) {
+                        const targetType = catToQType[newCat] || 'multiple_choice';
+                        setFormData({
+                          ...formData,
+                          category: newCat,
+                          questions: [createDefaultQuestion(targetType)]
+                        });
+                      } else {
+                        setFormData({ ...formData, category: newCat });
+                      }
+                    }}
                     className="w-full py-2 px-3 text-xs rounded-lg border border-slate-200 dark:border-navy-750 bg-white dark:bg-navy-950 text-slate-800 dark:text-slate-200"
                   >
                     <option value="Technical">Technical MCQ</option>

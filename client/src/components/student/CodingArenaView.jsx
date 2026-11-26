@@ -86,24 +86,47 @@ export const CodingArenaView = ({
   const currentLangId = selectedLanguages[currentQIndex] || currentQ.language || 'cpp';
   const currentLangConfig = LANGUAGE_CONFIGS.find((l) => l.id === currentLangId) || LANGUAGE_CONFIGS[0];
 
+  // Per-language starter code: check if starterCode is an object (per-language) or a string
+  const getStarterForLang = (langId) => {
+    if (currentQ.starterCode && typeof currentQ.starterCode === 'object') {
+      return currentQ.starterCode[langId] || currentQ.starterCode[Object.keys(currentQ.starterCode)[0]] || '';
+    }
+    if (currentQ.type === 'debugging') return currentQ.buggyCode || '';
+    return currentQ.starterCode || LANGUAGE_CONFIGS.find((l) => l.id === langId)?.starter || '';
+  };
+
   // Current code
   const currentCode = codeAnswers[currentQIndex] !== undefined
     ? codeAnswers[currentQIndex]
-    : currentQ.starterCode || currentQ.buggyCode || currentLangConfig.starter;
+    : getStarterForLang(currentLangId);
 
   // Active execution result for this question
   const activeResult = codeExecutionResults[currentQIndex];
 
-  // Public test cases
-  const publicTestCases = Array.isArray(currentQ.testCases)
-    ? currentQ.testCases.filter((tc) => !tc.isHidden)
-    : [];
+  // Sample test cases (for display in problem panel and Run Code)
+  // sampleTestCases = explicitly marked sample cases; fall back to non-hidden testCases
+  const sampleTestCases = Array.isArray(currentQ.sampleTestCases) && currentQ.sampleTestCases.length > 0
+    ? currentQ.sampleTestCases
+    : (Array.isArray(currentQ.testCases)
+        ? currentQ.testCases.filter((tc) => !tc.isHidden)
+        : []);
+
+  // Keep publicTestCases as alias for backward compat
+  const publicTestCases = sampleTestCases;
+
+  // Allowed languages for this question
+  const allowedLangIds = Array.isArray(currentQ.allowedLanguages) && currentQ.allowedLanguages.length > 0
+    ? currentQ.allowedLanguages
+    : LANGUAGE_CONFIGS.map((l) => l.id);
+  const visibleLanguages = LANGUAGE_CONFIGS.filter((l) => allowedLangIds.includes(l.id));
 
   const handleLanguageChange = (newLangId) => {
     setSelectedLanguages((prev) => ({ ...prev, [currentQIndex]: newLangId }));
     const newConfig = LANGUAGE_CONFIGS.find((l) => l.id === newLangId);
-    if (newConfig && (!currentCode || currentCode === currentLangConfig.starter)) {
-      setCodeAnswers((prev) => ({ ...prev, [currentQIndex]: newConfig.starter }));
+    // Only replace code if student hasn't edited from the starter
+    const currentStarter = getStarterForLang(currentLangId);
+    if (newConfig && (!currentCode || currentCode === currentStarter || currentCode === currentLangConfig.starter)) {
+      setCodeAnswers((prev) => ({ ...prev, [currentQIndex]: getStarterForLang(newLangId) }));
     }
   };
 
@@ -138,7 +161,7 @@ export const CodingArenaView = ({
   };
 
   const handleResetCode = () => {
-    const starter = currentQ.starterCode || currentQ.buggyCode || currentLangConfig.starter;
+    const starter = getStarterForLang(currentLangId);
     setCodeAnswers((prev) => ({ ...prev, [currentQIndex]: starter }));
     triggerAutoSave({
       questionIndex: currentQIndex,
@@ -161,6 +184,7 @@ export const CodingArenaView = ({
       setIsDrawerOpen(true);
 
       if (drawerTab === 'custom') {
+        // Custom input mode — raw execution, no test cases, no score
         const res = await testService.runCode({
           sourceCode: currentCode,
           language: currentLangId,
@@ -168,9 +192,13 @@ export const CodingArenaView = ({
         });
         if (res.success && res.output) {
           setCustomRunOutput(res.output);
+        } else {
+          setRunError(res.message || 'Execution failed.');
         }
       } else {
-        const res = await testService.submitCode({
+        // Test cases tab — run against sample test cases only (no score impact)
+        setDrawerTab('testcases');
+        const res = await testService.runSamples({
           testId: test.id || test._id,
           questionIndex: currentQIndex,
           sourceCode: currentCode,
@@ -179,7 +207,8 @@ export const CodingArenaView = ({
 
         if (res.success && res.result) {
           setCodeExecutionResults((prev) => ({ ...prev, [currentQIndex]: res.result }));
-          setDrawerTab('testcases');
+        } else {
+          setRunError(res.message || 'Execution failed. Check your code syntax.');
         }
       }
     } catch (err) {
@@ -406,9 +435,22 @@ export const CodingArenaView = ({
                 <Bookmark className={`w-4 h-4 ${isMarked ? 'fill-amber-400' : ''}`} />
               </button>
 
-              <h1 className="text-lg font-bold text-white tracking-tight">
-                {currentQ.questionText ? currentQ.questionText.split('\n')[0].replace(/^#+\s*/, '') : `Problem ${currentQIndex + 1}`}
-              </h1>
+              <div className="flex-1 min-w-0">
+                <h1 className="text-lg font-bold text-white tracking-tight truncate">
+                  {currentQ.title || (currentQ.questionText ? currentQ.questionText.split('\n')[0].replace(/^#+\s*/, '') : `Problem ${currentQIndex + 1}`)}
+                </h1>
+              </div>
+
+              {/* Difficulty Badge */}
+              {currentQ.difficulty && (
+                <span className={`flex-shrink-0 text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wide ${
+                  currentQ.difficulty === 'Easy' ? 'text-emerald-400 bg-emerald-950 border border-emerald-800' :
+                  currentQ.difficulty === 'Medium' ? 'text-amber-400 bg-amber-950 border border-amber-800' :
+                  'text-rose-400 bg-rose-950 border border-rose-800'
+                }`}>
+                  {currentQ.difficulty}
+                </span>
+              )}
             </div>
 
             {currentQ.type === 'debugging' && (
@@ -421,9 +463,9 @@ export const CodingArenaView = ({
 
           {/* Problem Statement Body */}
           <div className="p-6 space-y-6 text-[#c9d1d9] text-xs leading-relaxed overflow-y-auto flex-1 font-sans">
-            {/* Main Prompt Text */}
+            {/* Main Prompt / Description */}
             <div className="whitespace-pre-wrap space-y-2 text-slate-200">
-              {currentQ.questionText || 'Implement the algorithm according to specifications.'}
+              {currentQ.description || currentQ.questionText || 'Implement the algorithm according to specifications.'}
             </div>
 
             {/* Reference Defective Code for Debugging Arena */}
@@ -438,7 +480,27 @@ export const CodingArenaView = ({
               </div>
             )}
 
-            {/* Examples Section */}
+            {/* Input Format */}
+            {currentQ.inputFormat && (
+              <div className="space-y-1.5">
+                <div className="text-xs font-bold text-white">Input Format</div>
+                <pre className="p-3 rounded bg-[#161b22] border border-[#30363d] font-mono text-xs text-slate-300 whitespace-pre-wrap overflow-x-auto">
+                  {currentQ.inputFormat}
+                </pre>
+              </div>
+            )}
+
+            {/* Output Format */}
+            {currentQ.outputFormat && (
+              <div className="space-y-1.5">
+                <div className="text-xs font-bold text-white">Output Format</div>
+                <pre className="p-3 rounded bg-[#161b22] border border-[#30363d] font-mono text-xs text-slate-300 whitespace-pre-wrap overflow-x-auto">
+                  {currentQ.outputFormat}
+                </pre>
+              </div>
+            )}
+
+            {/* Sample Examples Section */}
             {publicTestCases.length > 0 && (
               <div className="space-y-4 pt-2">
                 {publicTestCases.map((tc, idx) => (
@@ -446,15 +508,21 @@ export const CodingArenaView = ({
                     <div className="text-xs font-bold text-white">
                       Example {idx + 1}
                     </div>
-                    <div className="p-3 rounded bg-[#161b22] border border-[#30363d] space-y-1.5 font-mono text-xs text-slate-300">
+                    <div className="p-3 rounded bg-[#161b22] border border-[#30363d] space-y-2 font-mono text-xs text-slate-300">
                       <div>
-                        <span className="text-slate-400">Input: </span>
-                        <span className="text-white">{tc.input || '(empty)'}</span>
+                        <div className="text-[10px] text-slate-500 uppercase font-semibold mb-0.5">Input:</div>
+                        <pre className="text-white whitespace-pre-wrap">{tc.input || '(empty)'}</pre>
                       </div>
                       <div>
-                        <span className="text-slate-400">Output: </span>
-                        <span className="text-[#00ea64] font-semibold">{tc.expectedOutput}</span>
+                        <div className="text-[10px] text-slate-500 uppercase font-semibold mb-0.5">Output:</div>
+                        <pre className="text-[#00ea64] font-semibold whitespace-pre-wrap">{tc.expectedOutput}</pre>
                       </div>
+                      {tc.explanation && (
+                        <div className="pt-1 border-t border-[#30363d]">
+                          <div className="text-[10px] text-slate-500 uppercase font-semibold mb-0.5">Explanation:</div>
+                          <div className="text-slate-300 whitespace-pre-wrap">{tc.explanation}</div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -466,13 +534,29 @@ export const CodingArenaView = ({
               <div className="text-xs font-bold text-white">
                 Constraints
               </div>
-              <ul className="list-disc list-inside space-y-1 text-xs text-slate-400 font-mono">
-                <li>1 ≤ lengths of arrays ≤ 2 * 10⁵</li>
-                <li>Time Limit: 5.0 seconds per test case</li>
-                <li>Memory Limit: 256 MB</li>
-                {currentQ.explanation && <li>Note: {currentQ.explanation}</li>}
-              </ul>
+              {currentQ.constraints ? (
+                <pre className="p-3 rounded bg-[#161b22] border border-[#30363d] font-mono text-xs text-slate-400 whitespace-pre-wrap overflow-x-auto">
+                  {currentQ.constraints}
+                </pre>
+              ) : (
+                <ul className="list-disc list-inside space-y-1 text-xs text-slate-400 font-mono">
+                  <li>Time Limit: {currentQ.timeLimit || 5} seconds per test case</li>
+                  <li>Memory Limit: {currentQ.memoryLimit || 256} MB</li>
+                  {currentQ.explanation && <li>Note: {currentQ.explanation}</li>}
+                </ul>
+              )}
             </div>
+
+            {/* Tags */}
+            {Array.isArray(currentQ.tags) && currentQ.tags.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {currentQ.tags.map((tag, i) => (
+                  <span key={i} className="px-2 py-0.5 rounded-full text-[10px] bg-[#21262d] text-slate-400 border border-[#30363d]">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </section>
 
@@ -488,7 +572,7 @@ export const CodingArenaView = ({
                 onChange={(e) => handleLanguageChange(e.target.value)}
                 className="py-1 px-2.5 rounded bg-[#161b22] border border-[#30363d] text-white font-mono text-xs focus:outline-none focus:border-slate-500 cursor-pointer"
               >
-                {LANGUAGE_CONFIGS.map((lang) => (
+                {visibleLanguages.map((lang) => (
                   <option key={lang.id} value={lang.id}>
                     {lang.label}
                   </option>

@@ -57,6 +57,41 @@ const formatStudentTest = (t, assignment = {}, submission = null) => {
   };
 };
 
+// Helper: fetch all tests visible to a student (explicitly assigned OR open published tests with no restricted assignments)
+const getVisibleTestsForStudent = async (studentId) => {
+  const [myAssignRes, allAssignRes, activeTestsRes] = await Promise.all([
+    supabase.from('assignments').select('*').eq('student_id', studentId),
+    supabase.from('assignments').select('test_id'),
+    supabase.from('tests').select('*').eq('is_active', true).order('created_at', { ascending: false })
+  ]);
+
+  if (myAssignRes.error) throw new Error(myAssignRes.error.message);
+  if (allAssignRes.error) throw new Error(allAssignRes.error.message);
+  if (activeTestsRes.error) throw new Error(activeTestsRes.error.message);
+
+  const myAssignMap = {};
+  (myAssignRes.data || []).forEach((a) => {
+    myAssignMap[a.test_id] = a;
+  });
+
+  const restrictedTestIds = new Set((allAssignRes.data || []).map((a) => a.test_id));
+
+  const visibleEntries = [];
+  (activeTestsRes.data || []).forEach((t) => {
+    const { meta } = parseDescriptionMeta(t.description);
+    if (meta.status === 'draft' || meta.status === 'archived') return;
+
+    const myAssign = myAssignMap[t.id];
+    const isOpenToAll = !restrictedTestIds.has(t.id);
+
+    if (myAssign || isOpenToAll) {
+      visibleEntries.push({ test: t, assignment: myAssign || {} });
+    }
+  });
+
+  return visibleEntries;
+};
+
 // =============================================================================
 // 1. DASHBOARD OVERVIEW
 // =============================================================================
@@ -65,13 +100,8 @@ const getStudentDashboard = async (req, res, next) => {
   try {
     const studentId = req.user.id;
 
-    // 1. Fetch student assignments
-    const { data: assignments, error: assignErr } = await supabase
-      .from('assignments')
-      .select('*, tests!test_id(*)')
-      .eq('student_id', studentId);
-
-    if (assignErr) return next(new Error(assignErr.message));
+    // 1. Fetch visible tests (assigned or open published)
+    const visibleEntries = await getVisibleTestsForStudent(studentId);
 
     // 2. Fetch student results
     const { data: results, error: resErr } = await supabase
@@ -89,7 +119,7 @@ const getStudentDashboard = async (req, res, next) => {
       .eq('user_id', studentId)
       .eq('is_read', false);
 
-    const totalAssigned = (assignments || []).length;
+    const totalAssigned = visibleEntries.length;
     const completedResults = results || [];
     const completedCount = completedResults.length;
     const passedCount = completedResults.filter((r) => r.passed).length;
@@ -173,36 +203,25 @@ const getStudentDashboard = async (req, res, next) => {
 // 2. ASSIGNED TESTS & FILTERING
 // =============================================================================
 
-// @desc    Get all tests ASSIGNED to the logged-in student only
+// @desc    Get all tests ASSIGNED to the logged-in student (or open published tests)
 // @route   GET /api/student/tests
 const getStudentTests = async (req, res, next) => {
   try {
     const studentId = req.user.id;
 
-    // Fetch assignments for this student
-    const { data: assignments, error: assignErr } = await supabase
-      .from('assignments')
-      .select('*, tests!test_id(*)')
-      .eq('student_id', studentId)
-      .order('created_at', { ascending: false });
-
-    if (assignErr) return next(new Error(assignErr.message));
-
-    // Fetch student results to check if already taken
-    const { data: submissions } = await supabase
-      .from('results')
-      .select('*')
-      .eq('student_id', studentId);
+    const [visibleEntries, submissionsRes] = await Promise.all([
+      getVisibleTestsForStudent(studentId),
+      supabase.from('results').select('*').eq('student_id', studentId)
+    ]);
 
     const submissionsMap = {};
-    (submissions || []).forEach((r) => {
+    (submissionsRes.data || []).forEach((r) => {
       submissionsMap[r.test_id] = r;
     });
 
-    // Format assigned tests only
-    const assignedTests = (assignments || [])
-      .filter((a) => a.tests && a.tests.is_active)
-      .map((a) => formatStudentTest(a.tests, a, submissionsMap[a.tests.id]));
+    const assignedTests = visibleEntries.map(({ test, assignment }) =>
+      formatStudentTest(test, assignment, submissionsMap[test.id])
+    );
 
     return res.status(200).json({
       success: true,
@@ -220,26 +239,16 @@ const getUpcomingTests = async (req, res, next) => {
   try {
     const studentId = req.user.id;
 
-    const { data: assignments, error } = await supabase
-      .from('assignments')
-      .select('*, tests!test_id(*)')
-      .eq('student_id', studentId)
-      .order('due_date', { ascending: true });
+    const [visibleEntries, submissionsRes] = await Promise.all([
+      getVisibleTestsForStudent(studentId),
+      supabase.from('results').select('test_id').eq('student_id', studentId)
+    ]);
 
-    if (error) return next(new Error(error.message));
+    const submittedSet = new Set((submissionsRes.data || []).map((s) => s.test_id));
 
-    // Check submissions
-    const { data: submissions } = await supabase
-      .from('results')
-      .select('test_id')
-      .eq('student_id', studentId);
-
-    const submittedSet = new Set((submissions || []).map((s) => s.test_id));
-
-    // Filter uncompleted upcoming assignments
-    const upcoming = (assignments || [])
-      .filter((a) => a.tests && a.tests.is_active && !submittedSet.has(a.tests.id))
-      .map((a) => formatStudentTest(a.tests, a, null));
+    const upcoming = visibleEntries
+      .filter(({ test }) => !submittedSet.has(test.id))
+      .map(({ test, assignment }) => formatStudentTest(test, assignment, null));
 
     return res.status(200).json({
       success: true,
@@ -266,30 +275,30 @@ const getArenaTests = async (req, res, next) => {
       sql: 'SQL'
     };
 
-    const targetCategory = categoryMap[category.toLowerCase()] || 'General';
+    const lowerCat = category.toLowerCase();
+    const targetCategory = categoryMap[lowerCat] || 'General';
 
-    // Fetch assignments for student
-    const { data: assignments, error } = await supabase
-      .from('assignments')
-      .select('*, tests!test_id(*)')
-      .eq('student_id', studentId);
-
-    if (error) return next(new Error(error.message));
-
-    // Fetch student's submissions
-    const { data: submissions } = await supabase
-      .from('results')
-      .select('*')
-      .eq('student_id', studentId);
+    const [visibleEntries, submissionsRes] = await Promise.all([
+      getVisibleTestsForStudent(studentId),
+      supabase.from('results').select('*').eq('student_id', studentId)
+    ]);
 
     const submissionsMap = {};
-    (submissions || []).forEach((r) => {
+    (submissionsRes.data || []).forEach((r) => {
       submissionsMap[r.test_id] = r;
     });
 
-    const arenaTests = (assignments || [])
-      .filter((a) => a.tests && a.tests.is_active && a.tests.category?.toLowerCase() === targetCategory.toLowerCase())
-      .map((a) => formatStudentTest(a.tests, a, submissionsMap[a.tests.id]));
+    const arenaTests = visibleEntries
+      .filter(({ test }) => {
+        if (test.category?.toLowerCase() === targetCategory.toLowerCase()) return true;
+        // Also match if the test contains questions of that arena type (e.g. coding questions inside a Technical test)
+        const qList = Array.isArray(test.questions) ? test.questions : [];
+        if (lowerCat === 'coding') return qList.some((q) => q.type === 'coding');
+        if (lowerCat === 'debugging') return qList.some((q) => q.type === 'debugging');
+        if (lowerCat === 'sql') return qList.some((q) => q.type === 'sql');
+        return false;
+      })
+      .map(({ test, assignment }) => formatStudentTest(test, assignment, submissionsMap[test.id]));
 
     return res.status(200).json({
       success: true,
