@@ -356,7 +356,7 @@ const getTestById = async (req, res, next) => {
     let existingAttempt = null;
 
     if (isStudent) {
-      // 1. Verify student is assigned to this test
+      // 1. Verify student is assigned to this test (or allow open published test with no restricted assignments)
       const { data: assignment, error: assignErr } = await supabase
         .from('assignments')
         .select('*')
@@ -367,10 +367,19 @@ const getTestById = async (req, res, next) => {
       if (assignErr) return next(new Error(assignErr.message));
 
       if (!assignment) {
-        return res.status(403).json({
-          success: false,
-          message: 'You have not been assigned to this assessment. Please contact your instructor.'
-        });
+        const { count: anyAssignCount, error: countErr } = await supabase
+          .from('assignments')
+          .select('id', { count: 'exact', head: true })
+          .eq('test_id', req.params.id);
+
+        if (countErr) return next(new Error(countErr.message));
+
+        if ((anyAssignCount || 0) > 0 || !data.is_active) {
+          return res.status(403).json({
+            success: false,
+            message: 'You have not been assigned to this assessment. Please contact your instructor.'
+          });
+        }
       }
 
       // 2. Check draft/archived status

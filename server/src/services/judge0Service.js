@@ -111,33 +111,23 @@ const executeCode = async ({
   memoryLimit = 256000
 }) => {
   const languageId = getLanguageId(language);
-  const apiUrl = (process.env.JUDGE0_API_URL || 'https://judge0-ce.p.rapidapi.com').replace(/\/+$/, '');
+  const configuredUrl = (process.env.JUDGE0_API_URL || '').replace(/\/+$/, '');
   const apiKey = process.env.JUDGE0_API_KEY;
   const apiHost = process.env.JUDGE0_API_HOST || 'judge0-ce.p.rapidapi.com';
 
-  // If Judge0 is not configured or in test mode without valid key, provide graceful fallback
   const isKeyConfigured = apiKey && apiKey !== 'your_rapidapi_key_here' && apiKey.length > 5;
+  const isRapidApiUrl = configuredUrl.includes('rapidapi.com');
 
-  if (!isKeyConfigured) {
-    if (getLanguageId(language) === 63) {
-      return runLocalJavaScript(sourceCode, stdin);
-    }
-    // Simulation fallback for other languages when API key is missing
-    return {
-      stdout: `[CampusTest Judge0 Runner]\nCode received for execution (${language}).\nPlease configure JUDGE0_API_KEY in server/.env for production live compilation.`,
-      stderr: '',
-      compile_output: '',
-      time: '0.042',
-      memory: 4096,
-      status: { id: 3, description: 'Accepted' }
-    };
-  }
+  // Use configured RapidAPI URL when key is present; otherwise use configured non-RapidAPI URL or public Judge0 CE
+  const apiUrl = isKeyConfigured
+    ? (configuredUrl || 'https://judge0-ce.p.rapidapi.com')
+    : (!isRapidApiUrl && configuredUrl ? configuredUrl : 'https://ce.judge0.com');
 
   const headers = {
     'Content-Type': 'application/json'
   };
 
-  if (apiKey) {
+  if (isKeyConfigured && isRapidApiUrl) {
     headers['x-rapidapi-key'] = apiKey;
     headers['x-rapidapi-host'] = apiHost;
   }
@@ -186,7 +176,18 @@ const executeCode = async ({
       };
     }
 
-    const data = await response.json();
+    let data = await response.json();
+
+    // Poll if Judge0 returned In Queue (1) or Processing (2)
+    if (data.token && data.status?.id <= 2) {
+      for (let attempt = 0; attempt < 10; attempt++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const pollRes = await fetch(`${apiUrl}/submissions/${data.token}?base64_encoded=true`, { headers });
+        if (!pollRes.ok) break;
+        data = await pollRes.json();
+        if (data.status?.id > 2) break;
+      }
+    }
 
     return {
       stdout: decodeBase64(data.stdout),
@@ -281,6 +282,17 @@ const runAgainstTestCases = async ({ sourceCode, language, testCases = [] }) => 
     if (tFloat > maxTime) maxTime = tFloat;
     if (execRes.memory > maxMemory) maxMemory = execRes.memory;
 
+    let caseStatus = 'Wrong Answer';
+    if (passed) {
+      caseStatus = 'Accepted';
+    } else if (execRes.compile_output || execRes.status?.id === 6) {
+      caseStatus = 'Compilation Error';
+    } else if (execRes.status?.id === 5) {
+      caseStatus = 'Time Limit Exceeded';
+    } else if (execRes.stderr || (execRes.status?.id && execRes.status.id >= 7)) {
+      caseStatus = execRes.status?.description || 'Runtime Error';
+    }
+
     results.push({
       testCaseIndex: i + 1,
       input: tc.isHidden ? '[HIDDEN TEST CASE]' : input,
@@ -289,7 +301,7 @@ const runAgainstTestCases = async ({ sourceCode, language, testCases = [] }) => 
       passed,
       time: execRes.time,
       memory: execRes.memory,
-      status: execRes.status?.description || (passed ? 'Accepted' : 'Wrong Answer'),
+      status: caseStatus,
       compileOutput: tc.isHidden ? null : execRes.compile_output,
       stderr: tc.isHidden ? null : execRes.stderr,
       isHidden: !!tc.isHidden
