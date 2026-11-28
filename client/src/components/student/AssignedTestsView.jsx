@@ -67,6 +67,7 @@ const AssignedTestsView = ({
 
   const filteredTests = useMemo(() => {
     return tests.filter((t) => {
+      if (t.alreadySubmitted || t.assignmentStatus === 'completed') return false;
       const q = search.toLowerCase();
       return (
         t.title?.toLowerCase().includes(q) ||

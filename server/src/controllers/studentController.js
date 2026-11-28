@@ -219,9 +219,9 @@ const getStudentTests = async (req, res, next) => {
       submissionsMap[r.test_id] = r;
     });
 
-    const assignedTests = visibleEntries.map(({ test, assignment }) =>
-      formatStudentTest(test, assignment, submissionsMap[test.id])
-    );
+    const assignedTests = visibleEntries
+      .filter(({ test, assignment }) => !submissionsMap[test.id] && assignment?.status !== 'completed')
+      .map(({ test, assignment }) => formatStudentTest(test, assignment, null));
 
     return res.status(200).json({
       success: true,
@@ -289,7 +289,8 @@ const getArenaTests = async (req, res, next) => {
     });
 
     const arenaTests = visibleEntries
-      .filter(({ test }) => {
+      .filter(({ test, assignment }) => {
+        if (submissionsMap[test.id] || assignment?.status === 'completed') return false;
         if (test.category?.toLowerCase() === targetCategory.toLowerCase()) return true;
         // Also match if the test contains questions of that arena type (e.g. coding questions inside a Technical test)
         const qList = Array.isArray(test.questions) ? test.questions : [];
@@ -298,7 +299,7 @@ const getArenaTests = async (req, res, next) => {
         if (lowerCat === 'sql') return qList.some((q) => q.type === 'sql');
         return false;
       })
-      .map(({ test, assignment }) => formatStudentTest(test, assignment, submissionsMap[test.id]));
+      .map(({ test, assignment }) => formatStudentTest(test, assignment, null));
 
     return res.status(200).json({
       success: true,
@@ -608,9 +609,107 @@ const getStudentProfile = async (req, res, next) => {
         role: profile.role,
         rollNumber: metadata.rollNumber || 'CS-2026-STU',
         department: metadata.department || 'Computer Science & Engineering',
-        batchYear: '2022 - 2026',
+        batchYear: metadata.batchYear || '2022 - 2026',
+        avatarUrl: metadata.avatarUrl || '',
         accountStatus: 'Active & Verified',
         enrolledAt: profile.created_at,
+        completedAssessments: completedCount || 0
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Update logged-in student's profile details
+// @route   PUT /api/student/profile
+const updateStudentProfile = async (req, res, next) => {
+  try {
+    const studentId = req.user.id;
+    const { name, rollNumber, department, batchYear, avatarUrl } = req.body;
+
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ success: false, message: 'Full name is required.' });
+    }
+
+    if (avatarUrl && typeof avatarUrl === 'string') {
+      const isValidImg = avatarUrl.startsWith('data:image/') || avatarUrl.startsWith('https://') || avatarUrl.startsWith('http://');
+      if (!isValidImg) {
+        return res.status(400).json({ success: false, message: 'Invalid profile picture format.' });
+      }
+      if (avatarUrl.length > 500000) {
+        return res.status(400).json({ success: false, message: 'Profile picture is too large. Please choose a smaller image.' });
+      }
+    }
+
+    const cleanName = String(name).trim();
+
+    // 1. Update name in profiles table
+    const { data: updatedProfile, error: profErr } = await supabase
+      .from('profiles')
+      .update({
+        name: cleanName,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', studentId)
+      .select('id, name, email, role, created_at, updated_at')
+      .single();
+
+    if (profErr || !updatedProfile) {
+      return next(new Error(profErr?.message || 'Failed to update profile.'));
+    }
+
+    // 2. Fetch existing metadata so unspecified fields are preserved
+    const { data: prevLog } = await supabase
+      .from('activity_logs')
+      .select('metadata')
+      .eq('entity_id', studentId)
+      .eq('action', 'student_updated')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const prevMeta = prevLog?.metadata || {};
+    const nextMeta = {
+      ...prevMeta,
+      rollNumber: rollNumber !== undefined ? String(rollNumber).trim() : (prevMeta.rollNumber || 'CS-2026-STU'),
+      department: department !== undefined ? String(department).trim() : (prevMeta.department || 'Computer Science & Engineering'),
+      batchYear: batchYear !== undefined ? String(batchYear).trim() : (prevMeta.batchYear || '2022 - 2026'),
+      avatarUrl: avatarUrl !== undefined ? String(avatarUrl) : (prevMeta.avatarUrl || '')
+    };
+
+    // 3. Persist updated academic metadata in activity_logs
+    const { error: logErr } = await supabase.from('activity_logs').insert({
+      user_id: studentId,
+      action: 'student_updated',
+      entity_type: 'student',
+      entity_id: studentId,
+      metadata: nextMeta
+    });
+
+    if (logErr) {
+      console.warn('[updateStudentProfile] activity_logs insert warning:', logErr.message);
+    }
+
+    const { count: completedCount } = await supabase
+      .from('results')
+      .select('id', { count: 'exact', head: true })
+      .eq('student_id', studentId);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully.',
+      profile: {
+        id: updatedProfile.id,
+        name: updatedProfile.name,
+        email: updatedProfile.email,
+        role: updatedProfile.role,
+        rollNumber: nextMeta.rollNumber,
+        department: nextMeta.department,
+        batchYear: nextMeta.batchYear,
+        avatarUrl: nextMeta.avatarUrl || '',
+        accountStatus: 'Active & Verified',
+        enrolledAt: updatedProfile.created_at,
         completedAssessments: completedCount || 0
       }
     });
@@ -630,5 +729,6 @@ module.exports = {
   getStudentNotifications,
   markNotificationRead,
   markAllNotificationsRead,
-  getStudentProfile
+  getStudentProfile,
+  updateStudentProfile
 };

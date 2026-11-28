@@ -12,7 +12,8 @@ const {
   getStudentNotifications,
   markNotificationRead,
   markAllNotificationsRead,
-  getStudentProfile
+  getStudentProfile,
+  updateStudentProfile
 } = require('../controllers/studentController');
 
 // All student routes require authentication and student role
@@ -39,5 +40,6 @@ router.patch('/notifications/:id/read', markNotificationRead);
 
 // 5. Profile
 router.get('/profile', getStudentProfile);
+router.put('/profile', updateStudentProfile);
 
 module.exports = router;

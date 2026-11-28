@@ -42,6 +42,9 @@ export const studentService = {
   // 5. Profile
   getProfile: async () => {
     return await api.get('/student/profile');
+  },
+  updateProfile: async (payload) => {
+    return await api.put('/student/profile', payload);
   }
 };
 
